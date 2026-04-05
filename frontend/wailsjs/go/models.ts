@@ -1,5 +1,25 @@
 export namespace main {
 	
+	export class BinaryVersion {
+	    name: string;
+	    current: string;
+	    latest: string;
+	    canUpgrade: boolean;
+	    updatePath: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new BinaryVersion(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.current = source["current"];
+	        this.latest = source["latest"];
+	        this.canUpgrade = source["canUpgrade"];
+	        this.updatePath = source["updatePath"];
+	    }
+	}
 	export class CompressionOptions {
 	    type: string;
 	    quality: string;

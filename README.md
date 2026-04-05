@@ -1,117 +1,112 @@
-# YTDown
+# 🎬 YTDown - Trình tải Video & Chuyển đổi Media cho macOS
 
-YTDown là ứng dụng desktop cho macOS dùng để tải video và trích xuất âm thanh từ các nguồn được `yt-dlp` hỗ trợ. Dự án được xây dựng bằng Go và Wails, tập trung vào một quy trình đơn giản: nhập liên kết, chọn định dạng, theo dõi tiến trình và nhận tệp kết quả ngay trên máy.
+YTDown là ứng dụng Desktop mạnh mẽ, đơn giản dành cho macOS, giúp bạn tải video chất lượng cao và trích xuất âm thanh từ YouTube, Facebook, TikTok và hàng trăm nền tảng khác.
 
-## Tính năng chính
+---
 
-- Hỗ trợ tải video chất lượng cao từ nhiều nguồn: **YouTube, Facebook/Instagram Reels, Xiaohongshu (Rednote)**,...
-- Tự động nhận diện và xử lý liên kết từ các nền tảng phổ biến
-- Hỗ trợ tải từng video hoặc danh sách phát
-- Xuất tệp `MP4` hoặc `MP3` (tách nhạc)
-- Chọn chất lượng video trước khi tải
-- Hiển thị tiến trình tải theo thời gian thực
+## 📥 Tải về ngay (Cho người dùng)
 
-## Cách dự án xử lý media
+Để sử dụng ứng dụng ngay lập tức mà không cần quan tâm đến code, bạn chỉ cần tải file cài đặt bên dưới:
 
-YTDown sử dụng hai thành phần chính:
+[![Download YTDown](https://img.shields.io/badge/Tải_về_cho-macOS_.dmg-0a84ff?style=for-the-badge&logo=apple)](https://github.com/justinnguyen/YTDown/releases/latest/download/YTDown.dmg)
 
-- `yt-dlp`: lấy thông tin video, phân tích liên kết và tải nội dung về máy
-- `ffmpeg`: ghép luồng, chuyển đổi định dạng và hỗ trợ xuất `MP3`
+> **Lưu ý:** Sau khi tải về, nếu macOS báo "App is damaged" hoặc "Unidentified Developer", hãy nhấn chuột phải vào ứng dụng và chọn **Open**.
 
+---
 
-## Yêu cầu hệ thống
+## 🛠 Hướng dẫn cài đặt môi trường (Cho người mới)
 
-- macOS 12 trở lên
-- Kết nối mạng
-- Homebrew để cài `yt-dlp`, `ffmpeg` nếu máy chưa có sẵn
+Nếu bạn muốn tự tay Build ứng dụng từ mã nguồn, hãy làm theo các bước đơn giản sau:
 
-## Cài đặt
+### 1. Mở Terminal
+Nhấn phím `Command (⌘) + Space`, gõ **Terminal** và nhấn **Enter**. Một cửa sổ lệnh sẽ hiện ra.
 
-### Người dùng cuối
-
-1. Tải bản phát hành `.dmg`
-2. Kéo `YTDown.app` vào thư mục `Applications`
-3. Mở ứng dụng
-
-Nếu máy chưa có `yt-dlp`, `ffmpeg` hãy cài bằng:
-
+### 2. Cài đặt Homebrew (Nếu chưa có)
+Homebrew là trình quản lý gói dành cho macOS. Hãy copy dòng lệnh sau và dán vào Terminal, sau đó nhấn **Enter**:
 ```bash
-brew install yt-dlp ffmpeg
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-## Phát triển
+### 3. Cài đặt các công cụ hỗ trợ
+Sau khi cài xong Homebrew, hãy dán lệnh này để cài đặt các thành phần cần thiết:
+```bash
+brew install yt-dlp ffmpeg go
+```
 
-### Yêu cầu
-
-- Go 1.22+
-- Wails v2 CLI
-- Homebrew
-- `yt-dlp`
-- `ffmpeg`
-
-### Chuẩn bị môi trường
-
+### 4. Cài đặt Wails CLI
+Đây là công cụ để build ứng dụng này từ mã nguồn Go:
 ```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
-brew install yt-dlp
-brew install ffmpeg
-go mod tidy
 ```
 
-### Chạy chế độ phát triển
+---
 
-```bash
-wails dev
-```
+## 🏗 Hướng dẫn Build ứng dụng từ mã nguồn
 
-### Build ứng dụng
+Dành cho các bạn muốn đóng góp hoặc tùy chỉnh ứng dụng:
 
-```bash
-wails build -platform darwin -tags universal
-```
+1. **Tải mã nguồn về máy:**
+   ```bash
+   git clone https://github.com/justinnguyen/YTDown.git
+   cd YTDown
+   ```
 
-Ứng dụng sau khi build nằm tại:
+2. **Cài đặt thư viện:**
+   ```bash
+   go mod tidy
+   ```
 
-```text
-build/bin/YTDown.app
-```
+3. **Chạy ứng dụng ở chế độ phát triển:**
+   ```bash
+   wails dev
+   ```
 
-### Tạo bản phát hành
+4. **Build bản chính thức (.app):**
+   ```bash
+   wails build -platform darwin/universal -ldflags "-s -w"
+   ```
+   *Ứng dụng hoàn thiện sẽ nằm trong thư mục `build/bin/YTDown.app`.*
 
-```bash
-bash build.sh
-```
+5. **Tạo file cài đặt (.dmg):**
+   Sử dụng script build có sẵn trong dự án:
+   ```bash
+   bash build.sh
+   ```
 
-Script sẽ:
+## 🌟 Tính năng chính
 
-- build `YTDown.app`
-- chép `ffmpeg` vào trong ứng dụng
-- ký lại app
-- tạo thư mục `dist/`
-- tạo file `.dmg` nếu hệ thống có `hdiutil`
+- Hỗ trợ tải video chất lượng cao từ nhiều nguồn: **YouTube, Facebook/Instagram Reels, TikTok, Xiaohongshu**,...
+- Tự động nhận diện và xử lý liên kết thông minh.
+- Hỗ trợ tải từng video đơn lẻ hoặc toàn bộ danh sách phát (Playlist).
+- Tùy chọn định dạng xuất tệp: `MP4` (Video) hoặc `MP3` (Âm thanh).
+- Chọn chất lượng video mong muốn (1080p, 720p, 4k...).
+- **Tính năng mới:** Tự động kiểm tra và cập nhật `yt-dlp` ngay trong App.
 
-## Cấu trúc dự án
+---
+
+## 📂 Cấu trúc dự án
 
 ```text
 YTDown/
-├── app.go
-├── downloader.go
-├── compressor.go
-├── main.go
-├── frontend/
-├── scripts/
-├── build.sh
-└── README.md
+├── app.go          # Logic xử lý giao diện và cập nhật
+├── downloader.go   # Core xử lý tải video với yt-dlp
+├── compressor.go   # Xử lý nén video/hình ảnh
+├── main.go         # Điểm khởi đầu của ứng dụng
+├── frontend/       # Giao diện người dùng (JS/HTML/CSS)
+├── build.sh        # Script đóng gói ứng dụng chuyên nghiệp
+└── README.md       # Tài liệu hướng dẫn
 ```
 
+## 📄 License
 
-## License
+Dự án được phát hành dưới bản quyền **MIT**.
 
-MIT
+## ☕ Ủng hộ tác giả
 
-## Ủng hộ ly cà phê
+Nếu YTDown giúp ích cho công việc của bạn, hãy mời mình một ly cà phê nhé:
 
-Nếu YTDown hữu ích với bạn, bạn có thể ủng hộ mình một ly cà phê:
+- **Ngân hàng:** MB Bank
+- **Số tài khoản:** `0798888888888`
+- **Chủ tài khoản:** `Nguyen Duc Huy`
 
-- MB Bank: `0798888888888`
-- Chủ tài khoản: `Nguyen Duc Huy`
+Cảm ơn bạn đã sử dụng YTDown! 🚀

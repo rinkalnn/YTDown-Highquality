@@ -8,6 +8,8 @@ export function CheckPlaylist(arg1:string):Promise<Record<string, any>>;
 
 export function GetDefaultSavePath():Promise<string>;
 
+export function GetVersionStatus():Promise<Array<main.BinaryVersion>>;
+
 export function GetVideoTitle(arg1:string):Promise<string>;
 
 export function OpenFolderDialog():Promise<string>;
@@ -23,5 +25,7 @@ export function StartBatchDownload(arg1:Array<string>,arg2:string,arg3:string,ar
 export function StartCompression(arg1:Array<string>,arg2:main.CompressionOptions):Promise<string>;
 
 export function StartDownload(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
+
+export function UpgradeBinary(arg1:string):Promise<void>;
 
 export function ValidateURL(arg1:string):Promise<boolean>;

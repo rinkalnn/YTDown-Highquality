@@ -14,6 +14,10 @@ export function GetDefaultSavePath() {
   return window['go']['main']['App']['GetDefaultSavePath']();
 }
 
+export function GetVersionStatus() {
+  return window['go']['main']['App']['GetVersionStatus']();
+}
+
 export function GetVideoTitle(arg1) {
   return window['go']['main']['App']['GetVideoTitle'](arg1);
 }
@@ -44,6 +48,10 @@ export function StartCompression(arg1, arg2) {
 
 export function StartDownload(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['StartDownload'](arg1, arg2, arg3, arg4);
+}
+
+export function UpgradeBinary(arg1) {
+  return window['go']['main']['App']['UpgradeBinary'](arg1);
 }
 
 export function ValidateURL(arg1) {

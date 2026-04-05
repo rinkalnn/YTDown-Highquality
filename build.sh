@@ -4,7 +4,7 @@
 
 set -e
 
-VERSION="1.0.0"
+VERSION="2026.04.05"
 OUTPUT_DIR="dist"
 APP_NAME="YTDown"
 APP_BUNDLE="build/bin/$APP_NAME.app"

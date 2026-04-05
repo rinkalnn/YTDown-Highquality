@@ -63,6 +63,43 @@ body {
     letter-spacing: -0.5px;
 }
 
+/* Update Banner */
+.update-banner {
+    background: rgba(10, 132, 255, 0.1);
+    border: 1px solid var(--accent-blue);
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    color: var(--text-primary);
+    animation: fadeIn 0.3s ease;
+}
+
+.upgrade-btn {
+    padding: 6px 12px;
+    background: var(--accent-blue);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.upgrade-btn:hover {
+    background: #0071d5;
+    transform: scale(1.05);
+}
+
+.upgrade-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 /* Tabs */
 .tabs {
     display: flex;

@@ -96,7 +96,46 @@ async function initializeApp() {
     setupGoEvents();
     setupWindowAutoHug();
     
+    if (state.wailsReady) {
+        checkUpdates();
+    }
+    
     console.log('[BOOT] Initialization complete!');
+}
+
+async function checkUpdates() {
+    try {
+        const versions = await window.go.main.App.GetVersionStatus();
+        const ytdlp = versions.find(v => v.name === 'yt-dlp');
+        
+        if (ytdlp && ytdlp.canUpgrade) {
+            const banner = document.getElementById('update-banner');
+            if (banner) {
+                banner.innerHTML = `
+                    <span>🚀 A new version of yt-dlp is available (v${ytdlp.current} → v${ytdlp.latest})</span>
+                    <button class="upgrade-btn" id="upgradeBtn">Upgrade Now</button>
+                `;
+                banner.style.display = 'flex';
+                
+                document.getElementById('upgradeBtn').addEventListener('click', async () => {
+                    const btn = document.getElementById('upgradeBtn');
+                    const span = banner.querySelector('span');
+                    btn.style.display = 'none';
+                    if (span) span.innerText = 'Initializing upgrade...';
+                    try {
+                        await window.go.main.App.UpgradeBinary('yt-dlp');
+                        banner.innerHTML = '<span>✅ yt-dlp upgraded successfully! Please restart the app.</span>';
+                        setTimeout(() => banner.style.display = 'none', 8000);
+                    } catch (err) {
+                        banner.innerHTML = `<span>❌ Upgrade failed: ${err}. Try running 'yt-dlp -U' manually.</span>`;
+                        setTimeout(() => banner.style.display = 'none', 10000);
+                    }
+                });
+            }
+        }
+    } catch (err) {
+        console.error('[UPDATER] Error checking updates:', err);
+    }
 }
 
 let lastSetHeight = 0;
@@ -152,6 +191,14 @@ function setupGoEvents() {
             
             window.runtime.EventsOn('binary-error', (error) => showError('⚠️ Missing Tool: ' + error));
             window.runtime.EventsOn('binary-warning', (warning) => showError('⚠️ Warning: ' + warning));
+            window.runtime.EventsOn('upgrade-status', (status) => {
+                const banner = document.getElementById('update-banner');
+                if (banner && banner.style.display !== 'none') {
+                    // Prepend or replace? Let's just update the text content if it exists
+                    const span = banner.querySelector('span');
+                    if (span) span.innerText = status;
+                }
+            });
             window.runtime.EventsOn('batch-complete', () => {
                 const btn = document.getElementById('startBatchBtn');
                 if (btn) {

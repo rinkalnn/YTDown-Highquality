@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -21,6 +23,15 @@ type App struct {
 	config *Config
 }
 
+// BinaryVersion struct
+type BinaryVersion struct {
+	Name       string `json:"name"`
+	Current    string `json:"current"`
+	Latest     string `json:"latest"`
+	CanUpgrade bool   `json:"canUpgrade"`
+	UpdatePath string `json:"updatePath"`
+}
+
 // Config struct for storing settings
 type Config struct {
 	SavePath string `json:"savePath"`
@@ -29,6 +40,108 @@ type Config struct {
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{}
+}
+
+// GetVersionStatus returns version info for yt-dlp and ffmpeg
+func (a *App) GetVersionStatus() []BinaryVersion {
+	var versions []BinaryVersion
+
+	// Check yt-dlp
+	ytdlpPath := getResourcePath("yt-dlp")
+	if ytdlpPath != "" {
+		current := ""
+		cmd := exec.Command(ytdlpPath, "--version")
+		if out, err := cmd.Output(); err == nil {
+			current = strings.TrimSpace(string(out))
+		}
+
+		latest := current
+		// Fetch latest from GitHub
+		client := &http.Client{Timeout: 5 * time.Second}
+		if resp, err := client.Get("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"); err == nil {
+			defer resp.Body.Close()
+			var data struct {
+				TagName string `json:"tag_name"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
+				latest = data.TagName
+			}
+		}
+
+		versions = append(versions, BinaryVersion{
+			Name:       "yt-dlp",
+			Current:    current,
+			Latest:     latest,
+			CanUpgrade: current != "" && latest != "" && current != latest,
+			UpdatePath: "https://github.com/yt-dlp/yt-dlp/releases/latest",
+		})
+	}
+
+	// Check ffmpeg
+	ffmpegPath := getResourcePath("ffmpeg")
+	if ffmpegPath != "" {
+		current := ""
+		cmd := exec.Command(ffmpegPath, "-version")
+		if out, err := cmd.Output(); err == nil {
+			lines := strings.Split(string(out), "\n")
+			if len(lines) > 0 {
+				// Parse "ffmpeg version 6.0 Copyright..."
+				parts := strings.Fields(lines[0])
+				if len(parts) >= 3 && parts[0] == "ffmpeg" && parts[1] == "version" {
+					current = parts[2]
+				} else {
+					current = lines[0]
+				}
+			}
+		}
+
+		versions = append(versions, BinaryVersion{
+			Name:       "ffmpeg",
+			Current:    current,
+			Latest:     current, // ffmpeg doesn't have a simple latest check here
+			CanUpgrade: false,
+		})
+	}
+
+	return versions
+}
+
+// UpgradeBinary attempts to upgrade a binary
+func (a *App) UpgradeBinary(name string) error {
+	if name != "yt-dlp" {
+		return fmt.Errorf("upgrade not supported for %s", name)
+	}
+
+	ytdlpPath := getResourcePath("yt-dlp")
+	if ytdlpPath == "" {
+		return fmt.Errorf("yt-dlp not found")
+	}
+
+	runtime.EventsEmit(a.ctx, "upgrade-status", "Upgrading yt-dlp via self-update...")
+	
+	// Try self-update first
+	cmd := exec.Command(ytdlpPath, "-U")
+	if output, err := cmd.CombinedOutput(); err == nil {
+		runtime.EventsEmit(a.ctx, "upgrade-status", "yt-dlp upgraded successfully.")
+		return nil
+	} else {
+		fmt.Printf("yt-dlp -U failed: %v\nOutput: %s\n", err, string(output))
+	}
+
+	// Fallback to brew
+	brewPath := getBrewPath()
+	if brewPath != "" {
+		runtime.EventsEmit(a.ctx, "upgrade-status", "Self-update failed. Trying Homebrew...")
+		cmd = exec.Command(brewPath, "upgrade", "yt-dlp")
+		if output, err := cmd.CombinedOutput(); err == nil {
+			runtime.EventsEmit(a.ctx, "upgrade-status", "yt-dlp upgraded via Homebrew.")
+			return nil
+		} else {
+			return fmt.Errorf("failed to upgrade yt-dlp: %s", string(output))
+		}
+	}
+
+	return fmt.Errorf("failed to upgrade yt-dlp and Homebrew not found")
 }
 
 // startup is called at application startup
