@@ -47,7 +47,7 @@ Dành cho các bạn muốn đóng góp hoặc tùy chỉnh ứng dụng:
 
 1. **Tải mã nguồn về máy:**
    ```bash
-   git clone https://github.com/justinnguyen/YTDown.git
+   git clone https://github.com/JustinNguyen9979/YTDown.git
    cd YTDown
    ```
 
