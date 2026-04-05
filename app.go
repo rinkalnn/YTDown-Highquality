@@ -40,9 +40,9 @@ func (a *App) startup(ctx context.Context) {
 	go func() {
 		status := a.CheckBinaries()
 		if !status["ytdlp"].(bool) {
-			runtime.EventsEmit(ctx, "binary-warning", "yt-dlp is missing. Trying Homebrew install...")
+			runtime.EventsEmit(ctx, "binary-warning", "yt-dlp is missing. Trying to install it with Homebrew...")
 			if err := ensureYTDLPInstalled(ctx); err != nil {
-				runtime.EventsEmit(ctx, "binary-error", "yt-dlp install failed: "+err.Error())
+				runtime.EventsEmit(ctx, "binary-error", err.Error())
 				return
 			}
 			runtime.EventsEmit(ctx, "binary-warning", "yt-dlp installed via Homebrew.")
@@ -82,17 +82,21 @@ func ensureYTDLPInstalled(_ context.Context) error {
 
 	brewPath := getBrewPath()
 	if brewPath == "" {
-		return fmt.Errorf("Homebrew is not installed")
+		return fmt.Errorf("Homebrew is not installed. Please install Homebrew from https://brew.sh, then reopen YTDown")
 	}
 
 	cmd := exec.Command(brewPath, "install", "yt-dlp")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(output)))
+		trimmed := strings.TrimSpace(string(output))
+		if trimmed == "" {
+			trimmed = err.Error()
+		}
+		return fmt.Errorf("Failed to install yt-dlp with Homebrew. Run `brew install yt-dlp` manually. Details: %s", trimmed)
 	}
 
 	if path := getResourcePath("yt-dlp"); path == "" {
-		return fmt.Errorf("yt-dlp is still unavailable after brew install")
+		return fmt.Errorf("Homebrew finished, but yt-dlp is still unavailable. Run `brew install yt-dlp` manually and reopen YTDown")
 	}
 
 	return nil

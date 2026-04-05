@@ -4,11 +4,15 @@ dist/
 bin/
 *.app
 *.dmg
+*.out
+*.test
 ytdown
 build_output.txt
+coverage.out
 
 # Logs
 *.log
+ytdlp_debug.log
 
 # OS generated files
 .DS_Store
@@ -34,3 +38,8 @@ frontend/dist/
 # Environment
 .env
 .env.local
+.env.*
+
+# Local temp files
+*.tmp
+*.bak
