@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -200,6 +201,10 @@ func buildDownloadArgs(format, quality, savePath, ffmpegPath string) []string {
 		args = append(args, "--ffmpeg-location", ffmpegPath)
 	}
 
+	if cookiePath := getTemporaryCookieFile(); cookiePath != "" {
+		args = append(args, "--cookies", cookiePath)
+	}
+
 	return args
 }
 
@@ -260,7 +265,13 @@ func GetVideoMetadata(url string) (string, error) {
 		return "", fmt.Errorf("yt-dlp not found")
 	}
 
-	cmd := exec.Command(ytdlpPath, "-J", "--no-warnings", url)
+	args := []string{"-J", "--no-warnings"}
+	if cookiePath := getTemporaryCookieFile(); cookiePath != "" {
+		args = append(args, "--cookies", cookiePath)
+	}
+	args = append(args, url)
+
+	cmd := exec.Command(ytdlpPath, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -289,7 +300,13 @@ func GetPlaylistVideos(url string) ([]string, error) {
 		return nil, fmt.Errorf("yt-dlp not found")
 	}
 
-	cmd := exec.Command(ytdlpPath, "--flat-playlist", "-J", url)
+	args := []string{"--flat-playlist", "-J"}
+	if cookiePath := getTemporaryCookieFile(); cookiePath != "" {
+		args = append(args, "--cookies", cookiePath)
+	}
+	args = append(args, url)
+
+	cmd := exec.Command(ytdlpPath, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -362,6 +379,104 @@ func getResourcePath(name string) string {
 	}
 
 	return ""
+}
+
+type DownloadFailure struct {
+	RequiresCookie bool
+	DisplayMessage string
+	Details        []string
+}
+
+func classifyDownloadFailure(err error, cookiePresent bool) DownloadFailure {
+	if err == nil {
+		return DownloadFailure{}
+	}
+
+	message := strings.TrimSpace(err.Error())
+	lower := strings.ToLower(message)
+	requiresCookie := looksLikeRestrictedAuthError(lower)
+
+	details := []string{}
+	if requiresCookie {
+		details = append(details, "Restricted video or login required.")
+		if cookiePresent {
+			details = append(details, "Cookie invalid or insufficient.")
+			details = append(details, "Please copy a fresh YouTube cookie.")
+		} else {
+			details = append(details, "Temporary cookie required.")
+			details = append(details, "Paste a YouTube Cookie header to retry.")
+		}
+		return DownloadFailure{
+			RequiresCookie: true,
+			DisplayMessage: "Error",
+			Details:        details,
+		}
+	}
+
+	details = append(details, "Download failed.")
+	details = append(details, summarizeErrorForUI(message))
+	return DownloadFailure{
+		RequiresCookie: false,
+		DisplayMessage: "Error",
+		Details:        details,
+	}
+}
+
+func looksLikeRestrictedAuthError(message string) bool {
+	patterns := []string{
+		"sign in to confirm your age",
+		"login required",
+		"members-only",
+		"private video",
+		"private video. sign in",
+		"confirm you're not a bot",
+		"use --cookies",
+		"this video is private",
+		"authentication required",
+		"sign in",
+		"http error 403",
+		"requested content is not available",
+	}
+
+	for _, pattern := range patterns {
+		if strings.Contains(message, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func summarizeErrorForUI(message string) string {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return "Unknown yt-dlp error."
+	}
+
+	lines := strings.Split(message, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		line = strings.TrimPrefix(line, "ERROR: ")
+		line = strings.TrimPrefix(line, "download failed: ")
+		if len(line) > 120 {
+			line = line[:117] + "..."
+		}
+		return line
+	}
+
+	return "Unknown yt-dlp error."
+}
+
+func IsRestrictedAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	return looksLikeRestrictedAuthError(strings.ToLower(err.Error())) || errors.Is(err, os.ErrPermission)
 }
 
 // SanitizeFilename removes invalid characters from filename

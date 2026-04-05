@@ -9,7 +9,12 @@ const state = {
     currentFormat: 'MP4',
     currentQuality: 'Best Quality',
     wailsReady: false,
-    selectedCompressFiles: [] // New state
+    selectedCompressFiles: [],
+    temporaryCookieRaw: '',
+    temporaryCookieDraft: '',
+    maskedCookieValue: '',
+    isSubmittingCookie: false,
+    cookieHasError: false
 };
 
 // Wait counter to prevent infinite loops
@@ -92,6 +97,7 @@ async function initializeApp() {
     
     setupTabs();
     setupBatchTab();
+    setupGlobalStatusTooltip();
     setupCompressTab();
     setupGoEvents();
     setupWindowAutoHug();
@@ -208,6 +214,7 @@ function setupGoEvents() {
             });
             
             window.runtime.EventsOn('batch-status', (data) => updateBatchStatus(data.index, data.status));
+            window.runtime.EventsOn('batch-error', (data) => updateBatchError(data));
             window.runtime.EventsOn('compression-status', (data) => updateCompressStatus(data.index, data.status));
             window.runtime.EventsOn('compression-progress', (data) => updateCompressProgress(data.index, data.status, data.message));
             window.runtime.EventsOn('compression-error', (data) => updateCompressError(data.index, data.error));
@@ -239,6 +246,7 @@ function setupTabs() {
 
 function setupBatchTab() {
     const clearBtn = document.getElementById('clearBatchBtn');
+    const toggleCookieBtn = document.getElementById('toggleCookieBtn');
     const browseBtn = document.getElementById('browseBatchBtn');
     const startBtn = document.getElementById('startBatchBtn');
     const textarea = document.getElementById('batchUrls');
@@ -246,6 +254,10 @@ function setupBatchTab() {
     const qualitySelect = document.getElementById('batchQualitySelect');
     const qualityRow = document.getElementById('batchQualityRow');
     const savePathInput = document.getElementById('batchSavePath');
+    const cookieInline = document.getElementById('cookieInline');
+    const cookieInput = document.getElementById('cookieInput');
+    const confirmCookieBtn = document.getElementById('confirmCookieBtn');
+    const cookieAddedBadge = document.getElementById('cookieAddedBadge');
 
     if (!clearBtn || !startBtn) return;
 
@@ -254,7 +266,93 @@ function setupBatchTab() {
         const tbody = document.getElementById('batchTableBody');
         if (tbody) tbody.innerHTML = '';
     });
-    
+
+    if (toggleCookieBtn && cookieInline && cookieInput && confirmCookieBtn) {
+        toggleCookieBtn.addEventListener('click', () => {
+            const willShow = cookieInline.hidden;
+            cookieInline.hidden = !willShow;
+            if (!cookieInline.hidden) {
+                state.cookieHasError = false;
+                if (cookieAddedBadge) cookieAddedBadge.hidden = true;
+                cookieInput.value = state.temporaryCookieDraft || state.maskedCookieValue || '';
+                setTimeout(() => cookieInput.focus(), 0);
+            }
+        });
+
+        cookieInput.addEventListener('paste', (event) => {
+            const pasted = event.clipboardData?.getData('text') || '';
+            if (!pasted) return;
+            event.preventDefault();
+            state.temporaryCookieDraft = pasted;
+            cookieInput.value = pasted;
+        });
+
+        cookieInput.addEventListener('input', (event) => {
+            state.temporaryCookieDraft = event.target.value;
+        });
+
+        cookieInput.addEventListener('blur', () => {
+            if (state.isSubmittingCookie) return;
+            setTimeout(() => {
+                const active = document.activeElement;
+                if (active === cookieInput || active === confirmCookieBtn || active === toggleCookieBtn) {
+                    return;
+                }
+                closeCookieEditor();
+            }, 0);
+        });
+
+        confirmCookieBtn.addEventListener('mousedown', () => {
+            state.isSubmittingCookie = true;
+        });
+
+        confirmCookieBtn.addEventListener('click', async () => {
+            const rawCookie = state.temporaryCookieDraft.trim();
+            if (!rawCookie) {
+                state.isSubmittingCookie = false;
+                if (!state.maskedCookieValue) {
+                    state.cookieHasError = true;
+                    showError('Cookie error: please paste a YouTube Cookie header first');
+                } else {
+                    closeCookieEditor();
+                }
+                return;
+            }
+
+            try {
+                await window.go.main.App.SetTemporaryYouTubeCookie(rawCookie);
+                state.temporaryCookieRaw = rawCookie;
+                state.temporaryCookieDraft = '';
+                state.maskedCookieValue = maskCookieValue(rawCookie);
+                state.cookieHasError = false;
+                cookieInline.hidden = true;
+                cookieInput.value = '';
+                clearResultMessage();
+                if (cookieAddedBadge) cookieAddedBadge.hidden = false;
+                updateCookieButtonState();
+            } catch (err) {
+                state.cookieHasError = true;
+                showError('Cookie error: ' + (err?.message || err));
+            } finally {
+                state.isSubmittingCookie = false;
+            }
+        });
+
+        document.addEventListener('click', (event) => {
+            if (cookieInline.hidden) return;
+            if (state.isSubmittingCookie) return;
+
+            const target = event.target;
+            if (target.closest('#cookieInline') || target.closest('#toggleCookieBtn')) {
+                return;
+            }
+
+            closeCookieEditor();
+        });
+    }
+
+    updateCookieButtonState();
+
     browseBtn.addEventListener('click', async () => {
         if (!state.wailsReady) return;
         const path = await window.go.main.App.OpenFolderDialog();
@@ -527,11 +625,8 @@ function updateProgress(data) {
         if (row) {
             const fill = row.querySelector('.batch-progress-fill');
             if (fill) fill.style.width = percentage + '%';
-            const statusCell = row.querySelector('td:nth-child(3)');
-            if (statusCell) {
-                if (percentage >= 100) statusCell.innerHTML = `<span class="status-icon">✅</span> Done`;
-                else statusCell.innerHTML = `<span class="status-icon">⏳</span> ${Math.round(percentage)}%`;
-            }
+            if (percentage >= 100) renderBatchStatusCell(index, 'done', ['Download complete.']);
+            else renderBatchStatusCell(index, 'downloading', [`${Math.round(percentage)}% complete`]);
         }
     }
 }
@@ -545,11 +640,148 @@ function showError(message) {
     }
 }
 
+function showSuccess(message) {
+    const el = document.getElementById('resultMessage');
+    if (el) {
+        el.textContent = message;
+        el.style.display = 'block';
+        el.className = 'result-message success';
+    }
+}
+
+function clearResultMessage() {
+    const el = document.getElementById('resultMessage');
+    if (el) {
+        el.textContent = '';
+        el.style.display = 'none';
+        el.className = 'result-message';
+    }
+}
+
 function updateBatchStatus(index, status) {
+    const details = {
+        downloading: ['Downloading...'],
+        done: ['Download complete.'],
+        error: ['Download failed.'],
+        waiting: ['Waiting for download slot.'],
+        retrying: ['Retrying with temporary cookie...']
+    };
+    renderBatchStatusCell(index, status, details[status] || [status]);
+}
+
+function updateBatchError(data) {
+    if (!data || typeof data.index === 'undefined') return;
+
+    const details = Array.isArray(data.details) && data.details.length > 0
+        ? data.details
+        : [data.error || 'Download failed.'];
+
+    if (data.requiresCookie) {
+        details.unshift('Video này cần xác thực.');
+    }
+
+    renderBatchStatusCell(data.index, 'error', details);
+}
+
+function renderBatchStatusCell(index, status, details = []) {
     const row = document.getElementById(`batch-row-${index}`);
     if (!row) return;
-    const icons = { 'downloading': '⏳', 'done': '✅', 'error': '❌', 'waiting': '⏳' };
-    const texts = { 'downloading': 'Downloading', 'done': 'Done', 'error': 'Error', 'waiting': 'Waiting' };
+
+    const icons = { downloading: '⏳', done: '✅', error: '❌', waiting: '⏳', retrying: '🔄' };
+    const texts = { downloading: 'Downloading', done: 'Done', error: 'Error', waiting: 'Waiting', retrying: 'Retrying' };
     const statusCell = row.querySelector('td:nth-child(3)');
-    if (statusCell) statusCell.innerHTML = `<span class="status-icon">${icons[status] || '?'}</span> ${texts[status] || status}`;
+    if (!statusCell) return;
+
+    const safeDetails = details
+        .filter(Boolean)
+        .map(line => escapeHtml(line));
+    const tooltipHtml = safeDetails.join('<br>');
+
+    statusCell.className = `status-cell status-${status}`;
+    statusCell.innerHTML = `
+        <div class="status-with-tooltip" data-tooltip-html="${tooltipHtml}">
+            <span class="status-icon">${icons[status] || '?'}</span>
+            <span>${texts[status] || status}</span>
+        </div>
+    `;
+}
+
+function setupGlobalStatusTooltip() {
+    if (document.getElementById('globalStatusTooltip')) return;
+
+    const tooltip = document.createElement('div');
+    tooltip.id = 'globalStatusTooltip';
+    tooltip.className = 'global-status-tooltip';
+    document.body.appendChild(tooltip);
+
+    document.addEventListener('mouseover', (event) => {
+        const trigger = event.target.closest('.status-with-tooltip');
+        if (!trigger) return;
+
+        const html = trigger.dataset.tooltipHtml;
+        if (!html) return;
+
+        tooltip.innerHTML = html;
+        tooltip.classList.add('visible');
+        positionGlobalStatusTooltip(event, tooltip);
+    });
+
+    document.addEventListener('mousemove', (event) => {
+        if (!tooltip.classList.contains('visible')) return;
+        if (!event.target.closest('.status-with-tooltip')) return;
+        positionGlobalStatusTooltip(event, tooltip);
+    });
+
+    document.addEventListener('mouseout', (event) => {
+        if (!event.target.closest('.status-with-tooltip')) return;
+        const related = event.relatedTarget;
+        if (related && related.closest && related.closest('.status-with-tooltip') === event.target.closest('.status-with-tooltip')) {
+            return;
+        }
+        tooltip.classList.remove('visible');
+    });
+}
+
+function positionGlobalStatusTooltip(event, tooltip) {
+    const offset = 14;
+    const maxLeft = window.innerWidth - tooltip.offsetWidth - 12;
+    const maxTop = window.innerHeight - tooltip.offsetHeight - 12;
+    const left = Math.min(event.clientX + offset, Math.max(12, maxLeft));
+    const top = Math.min(event.clientY + offset, Math.max(12, maxTop));
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+}
+
+function updateCookieButtonState() {
+    const toggleCookieBtn = document.getElementById('toggleCookieBtn');
+    const cookieAddedBadge = document.getElementById('cookieAddedBadge');
+    if (!toggleCookieBtn) return;
+    toggleCookieBtn.textContent = state.maskedCookieValue ? 'Cookie added' : 'Add Cookie ytb';
+    if (cookieAddedBadge) cookieAddedBadge.hidden = !state.maskedCookieValue;
+}
+
+function closeCookieEditor() {
+    const cookieInline = document.getElementById('cookieInline');
+    const cookieInput = document.getElementById('cookieInput');
+    if (cookieInline) cookieInline.hidden = true;
+    if (cookieInput) cookieInput.value = '';
+    state.temporaryCookieDraft = '';
+    state.cookieHasError = false;
+    clearResultMessage();
+}
+
+function maskCookieValue(raw) {
+    const normalized = raw.trim().replace(/\s+/g, ' ');
+    if (normalized.length <= 16) return normalized.replace(/.(?=.{0,2}$)/g, '*');
+    return `${normalized.slice(0, 10)}****${normalized.slice(-8)}`;
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }

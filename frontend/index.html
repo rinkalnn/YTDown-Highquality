@@ -25,9 +25,21 @@
         <div id="batch" class="tab-content active">
             <div class="batch-buttons">
                 <button type="button" id="clearBatchBtn" class="action-btn secondary">Clear</button>
+                <button type="button" id="toggleCookieBtn" class="action-btn secondary">Add Cookie ytb</button>
+                <div class="cookie-inline" id="cookieInline" hidden>
+                    <input type="text" id="cookieInput" class="cookie-inline-input" placeholder="Paste the full YouTube Cookie header here..." />
+                    <button type="button" id="confirmCookieBtn" class="action-btn secondary cookie-confirm-btn">Add</button>
+                    <div class="cookie-warning">
+                        <span class="cookie-warning-icon">⚠</span>
+                        <div class="cookie-warning-tooltip">Cookie is stored in memory only and will be deleted when the app closes</div>
+                    </div>
+                </div>
+                <div class="cookie-added-badge" id="cookieAddedBadge" hidden>Temporary YouTube cookie added</div>
             </div>
 
             <textarea id="batchUrls" class="batch-input" placeholder="Paste video URLs here (one per line)..."></textarea>
+
+            <div id="resultMessage" class="result-message" style="display: none;"></div>
 
             <div class="settings">
                 <div class="setting-row">

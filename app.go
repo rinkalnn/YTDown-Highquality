@@ -19,8 +19,23 @@ import (
 
 // App struct
 type App struct {
-	ctx    context.Context
-	config *Config
+	ctx          context.Context
+	config       *Config
+	batchMu      sync.Mutex
+	currentBatch *BatchDownloadState
+}
+
+type BatchDownloadState struct {
+	URLs               []string
+	Format             string
+	Quality            string
+	SavePath           string
+	RestrictedFailures map[int]RestrictedFailure
+}
+
+type RestrictedFailure struct {
+	URL       string
+	LastError string
 }
 
 // BinaryVersion struct
@@ -118,7 +133,7 @@ func (a *App) UpgradeBinary(name string) error {
 	}
 
 	runtime.EventsEmit(a.ctx, "upgrade-status", "Upgrading yt-dlp via self-update...")
-	
+
 	// Try self-update first
 	cmd := exec.Command(ytdlpPath, "-U")
 	if output, err := cmd.CombinedOutput(); err == nil {
@@ -217,6 +232,7 @@ func ensureYTDLPInstalled(_ context.Context) error {
 
 // shutdown is called at application termination
 func (a *App) shutdown(ctx context.Context) {
+	clearTemporaryYouTubeCookie()
 	a.saveConfig()
 }
 
@@ -300,6 +316,16 @@ func (a *App) StartBatchDownload(urls []string, format, quality, savePath string
 		return "Error: No URLs provided"
 	}
 
+	a.batchMu.Lock()
+	a.currentBatch = &BatchDownloadState{
+		URLs:               append([]string(nil), urls...),
+		Format:             format,
+		Quality:            quality,
+		SavePath:           savePath,
+		RestrictedFailures: make(map[int]RestrictedFailure),
+	}
+	a.batchMu.Unlock()
+
 	go func() {
 		results := make(map[string]bool)
 		var mu sync.Mutex
@@ -330,11 +356,20 @@ func (a *App) StartBatchDownload(urls []string, format, quality, savePath string
 				mu.Unlock()
 
 				if err != nil {
+					failure := classifyDownloadFailure(err, hasTemporaryCookie())
+					if failure.RequiresCookie {
+						a.trackRestrictedFailure(i, url, err.Error())
+					}
+
 					runtime.EventsEmit(a.ctx, "batch-error", map[string]interface{}{
-						"index": i,
-						"error": err.Error(),
+						"index":          i,
+						"error":          err.Error(),
+						"displayMessage": failure.DisplayMessage,
+						"details":        failure.Details,
+						"requiresCookie": failure.RequiresCookie,
 					})
 				} else {
+					a.clearRestrictedFailure(i)
 					runtime.EventsEmit(a.ctx, "batch-status", map[string]interface{}{
 						"index":  i,
 						"status": "done",
@@ -352,6 +387,15 @@ func (a *App) StartBatchDownload(urls []string, format, quality, savePath string
 // RetryDownload retries downloading a failed video
 func (a *App) RetryDownload(url, format, quality, savePath string) string {
 	return a.StartDownload(url, format, quality, savePath)
+}
+
+func (a *App) SetTemporaryYouTubeCookie(raw string) error {
+	if err := setTemporaryYouTubeCookie(raw); err != nil {
+		return err
+	}
+
+	go a.retryRestrictedBatchDownloads()
+	return nil
 }
 
 // ValidateURL checks if URL is a valid YouTube link
@@ -391,6 +435,96 @@ func (a *App) GetDefaultSavePath() string {
 		return "/Users/" + os.Getenv("USER") + "/Downloads"
 	}
 	return filepath.Join(usr.HomeDir, "Downloads")
+}
+
+func (a *App) trackRestrictedFailure(index int, url, errMsg string) {
+	a.batchMu.Lock()
+	defer a.batchMu.Unlock()
+
+	if a.currentBatch == nil {
+		return
+	}
+
+	a.currentBatch.RestrictedFailures[index] = RestrictedFailure{
+		URL:       url,
+		LastError: errMsg,
+	}
+}
+
+func (a *App) clearRestrictedFailure(index int) {
+	a.batchMu.Lock()
+	defer a.batchMu.Unlock()
+
+	if a.currentBatch == nil {
+		return
+	}
+
+	delete(a.currentBatch.RestrictedFailures, index)
+}
+
+func (a *App) retryRestrictedBatchDownloads() {
+	a.batchMu.Lock()
+	if a.currentBatch == nil || len(a.currentBatch.RestrictedFailures) == 0 {
+		a.batchMu.Unlock()
+		return
+	}
+
+	type retryItem struct {
+		index int
+		url   string
+	}
+
+	format := a.currentBatch.Format
+	quality := a.currentBatch.Quality
+	savePath := a.currentBatch.SavePath
+	items := make([]retryItem, 0, len(a.currentBatch.RestrictedFailures))
+
+	for index, failure := range a.currentBatch.RestrictedFailures {
+		items = append(items, retryItem{
+			index: index,
+			url:   failure.URL,
+		})
+	}
+	a.batchMu.Unlock()
+
+	sem := make(chan struct{}, 3)
+	var wg sync.WaitGroup
+
+	for _, item := range items {
+		wg.Add(1)
+		go func(item retryItem) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			runtime.EventsEmit(a.ctx, "batch-status", map[string]interface{}{
+				"index":  item.index,
+				"status": "retrying",
+			})
+
+			err := DownloadVideo(a.ctx, item.index, item.url, format, quality, savePath)
+			if err != nil {
+				failure := classifyDownloadFailure(err, true)
+				a.trackRestrictedFailure(item.index, item.url, err.Error())
+				runtime.EventsEmit(a.ctx, "batch-error", map[string]interface{}{
+					"index":          item.index,
+					"error":          err.Error(),
+					"displayMessage": failure.DisplayMessage,
+					"details":        failure.Details,
+					"requiresCookie": failure.RequiresCookie,
+				})
+				return
+			}
+
+			a.clearRestrictedFailure(item.index)
+			runtime.EventsEmit(a.ctx, "batch-status", map[string]interface{}{
+				"index":  item.index,
+				"status": "done",
+			})
+		}(item)
+	}
+
+	wg.Wait()
 }
 
 // SelectFiles opens native file picker for multiple files

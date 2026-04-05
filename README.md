@@ -8,7 +8,7 @@ YTDown là ứng dụng Desktop mạnh mẽ, đơn giản dành cho macOS, giúp
 
 Để sử dụng ứng dụng ngay lập tức mà không cần quan tâm đến code, bạn chỉ cần tải file cài đặt bên dưới:
 
-[![Download YTDown](https://img.shields.io/badge/Tải_về_cho-macOS_.dmg-0a84ff?style=for-the-badge&logo=apple)](https://github.com/JustinNguyen9979/YTDown/releases/download/2026.4.5/YTDown-2026.04.05.dmg)
+[![Download YTDown](https://img.shields.io/badge/Tải_về_cho-macOS_.dmg-0a84ff?style=for-the-badge&logo=apple)](https://github.com/JustinNguyen9979/YTDown/releases)
 
 > **Lưu ý:** Sau khi tải về, nếu macOS báo "App is damaged" hoặc "Unidentified Developer", hãy nhấn chuột phải vào ứng dụng và chọn **Open**.
 
@@ -75,7 +75,9 @@ Dành cho các bạn muốn đóng góp hoặc tùy chỉnh ứng dụng:
 
 ## 🌟 Tính năng chính
 
-- Hỗ trợ tải video chất lượng cao từ nhiều nguồn: **YouTube, Facebook/Instagram Reels, TikTok, Xiaohongshu**,...
+- Hỗ trợ tải video chất lượng cao từ nhiều nguồn: **YouTube, Facebook/Instagram Reels, TikTok, Xiaohongshu/Rednote**,...
+- Hỗ trợ download bằng **cookie** cho các video ytb bị giới hạn.
+- **Cookie sẽ bị xóa ngay sau khi đóng app.**
 - Tự động nhận diện và xử lý liên kết thông minh.
 - Hỗ trợ tải từng video đơn lẻ hoặc toàn bộ danh sách phát (Playlist).
 - Tùy chọn định dạng xuất tệp: `MP4` (Video) hoặc `MP3` (Âm thanh).

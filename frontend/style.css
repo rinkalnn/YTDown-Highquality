@@ -363,12 +363,106 @@ select:focus {
 .batch-buttons {
     display: flex;
     gap: 8px;
+    align-items: center;
 }
 
 .batch-input {
     min-height: 80px;
     resize: vertical;
     padding: 12px 14px;
+}
+
+.cookie-inline {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex: 1;
+}
+
+.cookie-inline[hidden] {
+    display: none !important;
+}
+
+.cookie-added-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(52, 199, 89, 0.14);
+    border: 1px solid rgba(52, 199, 89, 0.3);
+    color: var(--accent-green);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.cookie-added-badge[hidden] {
+    display: none !important;
+}
+
+.cookie-inline-input {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: inherit;
+    transition: all 0.2s ease;
+}
+
+.cookie-inline-input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 2px rgb(10, 132, 255, 0.2);
+}
+
+.cookie-confirm-btn {
+    white-space: nowrap;
+}
+
+.cookie-warning {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 auto;
+}
+
+.cookie-warning-icon {
+    color: #f5c542;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: default;
+}
+
+.cookie-warning-tooltip {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    min-width: 260px;
+    max-width: 280px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(10, 10, 10, 0.96);
+    border: 1px solid var(--border-color);
+    color: #fff;
+    font-size: 11px;
+    line-height: 1.5;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+    z-index: 30;
+    white-space: normal;
+}
+
+.cookie-warning:hover .cookie-warning-tooltip {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 /* Progress Section */
@@ -502,6 +596,44 @@ select:focus {
     margin-right: 6px;
 }
 
+.status-cell {
+    overflow: visible !important;
+}
+
+.status-with-tooltip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: default;
+}
+
+.global-status-tooltip {
+    position: fixed;
+    left: 0;
+    top: 0;
+    min-width: 240px;
+    max-width: 340px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(10, 10, 10, 0.98);
+    border: 1px solid var(--border-color);
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.55;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 0.14s ease, transform 0.14s ease;
+    z-index: 99999;
+    white-space: normal;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.global-status-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
 .batch-table .status-done {
     color: var(--accent-green);
 }
@@ -509,6 +641,10 @@ select:focus {
 .batch-table .status-downloading {
     color: var(--accent-blue);
     animation: pulse 1.5s infinite;
+}
+
+.batch-table .status-retrying {
+    color: var(--accent-blue);
 }
 
 .batch-table .status-error {
@@ -690,4 +826,3 @@ select:focus {
 select.hidden-select {
     display: none !important;
 }
-
