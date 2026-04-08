@@ -14,10 +14,6 @@ export function GetDefaultSavePath() {
   return window['go']['main']['App']['GetDefaultSavePath']();
 }
 
-export function GetLogPath() {
-  return window['go']['main']['App']['GetLogPath']();
-}
-
 export function GetVersionStatus() {
   return window['go']['main']['App']['GetVersionStatus']();
 }
@@ -36,10 +32,6 @@ export function OpenFile(arg1) {
 
 export function OpenFolderDialog() {
   return window['go']['main']['App']['OpenFolderDialog']();
-}
-
-export function OpenLogFile() {
-  return window['go']['main']['App']['OpenLogFile']();
 }
 
 export function OpenSaveFolder(arg1) {

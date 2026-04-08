@@ -17,85 +17,15 @@ import (
 	runtimepkg "runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var logFile *os.File
-var logWriter *bufio.Writer
-var logMutex sync.Mutex
-
 type VideoInfo struct {
 	Title     string `json:"title"`
 	Thumbnail string `json:"thumbnail"`
 	ID        string `json:"id"`
-}
-
-// initLogger initializes the logging system
-func initLogger() error {
-	currentUser, err := user.Current()
-	if err != nil {
-		return err
-	}
-
-	logDir := filepath.Join(currentUser.HomeDir, ".ytdown", "logs")
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return err
-	}
-
-	logPath := filepath.Join(logDir, "ytdown.log")
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-
-	logFile = file
-	logWriter = bufio.NewWriter(file)
-
-	writeLog("INFO", "Logger initialized at: "+logPath)
-
-	return nil
-}
-
-// writeLog writes a formatted log entry (thread-safe)
-func writeLog(level, message string) {
-	logMutex.Lock()
-	defer logMutex.Unlock()
-
-	if logWriter == nil {
-		fmt.Printf("[%s] %s\n", level, message)
-		return
-	}
-
-	timestamp := time.Now().Format("2006-01-02 15:04:05.000")
-	logEntry := fmt.Sprintf("[%s] [%s] %s\n", timestamp, level, message)
-
-	logWriter.WriteString(logEntry)
-	logWriter.Flush()
-
-	// Also print to console
-	fmt.Print(logEntry)
-}
-
-// writeLogf writes a formatted log entry with printf (thread-safe)
-func writeLogf(level, format string, args ...interface{}) {
-	message := fmt.Sprintf(format, args...)
-	writeLog(level, message)
-}
-
-// closeLogger closes the log file (thread-safe)
-func closeLogger() {
-	logMutex.Lock()
-	defer logMutex.Unlock()
-
-	if logWriter != nil {
-		logWriter.Flush()
-	}
-	if logFile != nil {
-		logFile.Close()
-	}
 }
 
 // DownloadVideo downloads a video using yt-dlp
@@ -343,24 +273,17 @@ func parseProgress(line string) map[string]interface{} {
 
 // GetVideoMetadata fetches video title, thumbnail and ID
 func GetVideoMetadata(url string) (*VideoInfo, error) {
-	writeLogf("INFO", "GetVideoMetadata called with URL: %s", url)
-
 	ytdlpPath := getResourcePath("yt-dlp")
 	if ytdlpPath == "" {
-		writeLog("ERROR", "yt-dlp path not found")
 		return nil, fmt.Errorf("yt-dlp not found")
 	}
-	writeLogf("DEBUG", "yt-dlp path: %s", ytdlpPath)
 
 	// Get title, thumbnail URL, and ID from yt-dlp
 	args := []string{"--get-title", "--get-thumbnail", "--get-id", "--no-warnings"}
 	if cookiePath := getTemporaryCookieFile(); cookiePath != "" {
 		args = append(args, "--cookies", cookiePath)
-		writeLog("DEBUG", "Using cookie file for authentication")
 	}
 	args = append(args, url)
-
-	writeLogf("DEBUG", "Running yt-dlp with %d args: %v", len(args), args)
 
 	cmd := exec.Command(ytdlpPath, args...)
 
@@ -368,23 +291,13 @@ func GetVideoMetadata(url string) (*VideoInfo, error) {
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
-		writeLogf("ERROR", "yt-dlp execution error: %v", err)
-		writeLogf("ERROR", "yt-dlp output: %s", string(output))
 		return nil, err
 	}
 
 	outputStr := strings.TrimSpace(string(output))
-	writeLogf("DEBUG", "yt-dlp raw output length: %d bytes", len(outputStr))
-	writeLogf("DEBUG", "yt-dlp raw output: %s", outputStr)
-
 	lines := strings.Split(outputStr, "\n")
-	writeLogf("DEBUG", "yt-dlp returned %d lines", len(lines))
 
 	if len(lines) < 3 {
-		writeLogf("ERROR", "Expected 3+ lines, got %d", len(lines))
-		for i, line := range lines {
-			writeLogf("DEBUG", "Line %d (%d chars): %s", i, len(line), line)
-		}
 		return nil, fmt.Errorf("could not extract title, thumbnail or ID")
 	}
 
@@ -392,18 +305,8 @@ func GetVideoMetadata(url string) (*VideoInfo, error) {
 	videoID := strings.TrimSpace(lines[1])
 	thumbnailURL := strings.TrimSpace(lines[2])
 
-	writeLogf("DEBUG", "Extracted - Title: %s", title)
-	writeLogf("DEBUG", "Extracted - VideoID: %s", videoID)
-	writeLogf("DEBUG", "Extracted - Thumbnail URL: %s", thumbnailURL)
-
 	// Download thumbnail and convert to base64 data URL
 	dataURL := downloadThumbnailAsBase64(thumbnailURL)
-
-	if dataURL == "" {
-		writeLog("WARN", "Failed to download thumbnail, returning empty string")
-	} else {
-		writeLogf("DEBUG", "Successfully converted thumbnail to data URL (size: %d chars)", len(dataURL))
-	}
 
 	return &VideoInfo{
 		Title:     title,
@@ -415,38 +318,26 @@ func GetVideoMetadata(url string) (*VideoInfo, error) {
 // downloadThumbnailAsBase64 downloads thumbnail and returns as base64 data URL
 func downloadThumbnailAsBase64(thumbnailURL string) string {
 	if thumbnailURL == "" {
-		writeLog("ERROR", "Thumbnail URL is empty")
 		return ""
 	}
 
-	writeLogf("DEBUG", "Starting thumbnail download from: %s", thumbnailURL)
-
 	// Download thumbnail with timeout
 	client := &http.Client{Timeout: 10 * time.Second}
-	startTime := time.Now()
-
 	resp, err := client.Get(thumbnailURL)
 	if err != nil {
-		writeLogf("ERROR", "Failed to download thumbnail: %v", err)
 		return ""
 	}
 	defer resp.Body.Close()
 
-	writeLogf("DEBUG", "HTTP Status: %d (took %.2fs)", resp.StatusCode, time.Since(startTime).Seconds())
-
 	if resp.StatusCode != http.StatusOK {
-		writeLogf("ERROR", "Thumbnail download returned status: %d", resp.StatusCode)
 		return ""
 	}
 
 	// Read thumbnail bytes
 	thumbnailData, err := io.ReadAll(resp.Body)
 	if err != nil {
-		writeLogf("ERROR", "Failed to read thumbnail data: %v", err)
 		return ""
 	}
-
-	writeLogf("DEBUG", "Downloaded %d bytes", len(thumbnailData))
 
 	// Determine MIME type from URL
 	mimeType := "image/jpeg"
@@ -455,16 +346,11 @@ func downloadThumbnailAsBase64(thumbnailURL string) string {
 	} else if strings.Contains(strings.ToLower(thumbnailURL), ".webp") {
 		mimeType = "image/webp"
 	}
-	writeLogf("DEBUG", "Detected MIME type: %s", mimeType)
 
 	// Convert to base64 data URL
-	encodeStart := time.Now()
 	encoded := encodeBase64(thumbnailData)
-	writeLogf("DEBUG", "Base64 encoding took %.2fs", time.Since(encodeStart).Seconds())
-
 	dataURL := fmt.Sprintf("data:%s;base64,%s", mimeType, encoded)
 
-	writeLogf("INFO", "Successfully converted thumbnail to data URL (%d chars, %.2fs total)", len(dataURL), time.Since(startTime).Seconds())
 	return dataURL
 }
 
