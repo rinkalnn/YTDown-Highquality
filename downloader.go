@@ -54,7 +54,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 
 	println("[DL] Running command:", ytdlpPath, "with", len(args), "args")
 
-	cmd := exec.Command(ytdlpPath, args...)
+	cmd := exec.CommandContext(ctx, ytdlpPath, args...)
 
 	// Capture stdout for progress tracking
 	stdout, err := cmd.StdoutPipe()
@@ -165,6 +165,9 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 	}
 
 	if err := cmd.Wait(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if stderrOutput.Len() > 0 {
 			return fmt.Errorf("download failed: %s", stderrOutput.String())
 		}
@@ -210,6 +213,8 @@ func buildDownloadArgs(format, quality, savePath, ffmpegPath string) []string {
 	// Common arguments
 	args = append(args,
 		"--no-playlist",
+		"--no-continue",
+		"--force-overwrites",
 		"--concurrent-fragments", strconv.Itoa(runtimepkg.NumCPU()),
 		"-o", filepath.Join(savePath, "%(title)s.%(ext)s"),
 	)

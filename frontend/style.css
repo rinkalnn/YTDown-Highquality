@@ -313,6 +313,12 @@ select:focus {
     transform: scale(0.98);
 }
 
+.browse-btn:disabled,
+.path-input:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 .open-folder-btn:hover {
     background: rgba(52, 199, 89, 0.15) !important;
     border-color: var(--accent-green) !important;
@@ -351,6 +357,33 @@ select:focus {
     opacity: 0.4;
     cursor: not-allowed;
     box-shadow: none;
+}
+
+.batch-download-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.batch-download-actions .download-btn {
+    flex: 1 1 0;
+}
+
+.pause-btn {
+    background: #ff9f0a;
+}
+
+.pause-btn:hover:not(:disabled) {
+    background: #e38d00;
+    box-shadow: 0 0 30px rgba(255, 159, 10, 0.5);
+}
+
+.cancel-btn {
+    background: #ff453a;
+}
+
+.cancel-btn:hover:not(:disabled) {
+    background: #e1382d;
+    box-shadow: 0 0 30px rgba(255, 69, 58, 0.45);
 }
 
 .action-btn {
@@ -773,6 +806,14 @@ select:focus {
     color: var(--accent-blue);
 }
 
+.batch-table .status-paused {
+    color: #ffcc00;
+}
+
+.batch-table .status-canceled {
+    color: #ff9f0a;
+}
+
 .batch-table .status-error {
     color: var(--accent-red);
 }
@@ -865,6 +906,10 @@ select:focus {
     user-select: none;
 }
 
+.custom-select-container.disabled {
+    pointer-events: none;
+}
+
 .custom-select-trigger {
     height: 38px; /* Khớp với nút Select (38px) */
     padding: 0 14px;
@@ -897,6 +942,11 @@ select:focus {
 
 .custom-select-container.open .custom-select-trigger::after {
     transform: rotate(180deg);
+}
+
+.custom-select-container.disabled .custom-select-trigger {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 .custom-select-options {

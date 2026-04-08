@@ -88,7 +88,11 @@
                 </div>
             </div>
 
-            <button type="button" class="download-btn" id="startBatchBtn">▶ Start Download</button>
+            <div class="batch-download-actions">
+                <button type="button" class="download-btn" id="startBatchBtn">▶ Start Download</button>
+                <button type="button" class="download-btn pause-btn" id="pauseBatchBtn" hidden>⏸ Pause</button>
+                <button type="button" class="download-btn cancel-btn" id="cancelBatchBtn" hidden>✕ Cancel</button>
+            </div>
 
             <!-- Download Progress -->
             <div class="batch-progress">
@@ -194,7 +198,7 @@
             <div class="info-container">
                 <div class="info-section">
                     <h3>Version</h3>
-                    <p>2026.04.09</p>
+                    <p>2026.04.10</p>
                 </div>
 
                 <div class="info-section">

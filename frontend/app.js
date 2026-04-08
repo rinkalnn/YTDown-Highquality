@@ -16,7 +16,8 @@ const state = {
     maskedCookieValue: '',
     isSubmittingCookie: false,
     cookieHasError: false,
-    downloadedFiles: {} // Store index -> localFilePath
+    downloadedFiles: {}, // Store index -> localFilePath
+    batchSessionStatus: 'idle'
 };
 
 // Wait counter to prevent infinite loops
@@ -245,12 +246,11 @@ function setupGoEvents() {
                 }
             });
             window.runtime.EventsOn('batch-complete', () => {
-                const btn = document.getElementById('startBatchBtn');
-                if (btn) {
-                    btn.disabled = false;
-                    btn.textContent = '▶ Start Download';
-                }
+                applyBatchControlState('completed');
             });
+            window.runtime.EventsOn('batch-paused', () => applyBatchControlState('paused'));
+            window.runtime.EventsOn('batch-resumed', () => applyBatchControlState('running'));
+            window.runtime.EventsOn('batch-canceled', () => applyBatchControlState('canceled'));
             
             window.runtime.EventsOn('batch-status', (data) => updateBatchStatus(data.index, data.status));
             window.runtime.EventsOn('batch-error', (data) => updateBatchError(data));
@@ -283,11 +283,88 @@ function setupTabs() {
     });
 }
 
+function refreshCustomSelectStates() {
+    document.querySelectorAll('.custom-select-container').forEach(container => {
+        const select = container.querySelector('select');
+        container.classList.toggle('disabled', !!select?.disabled);
+        if (select?.disabled) {
+            container.classList.remove('open');
+        }
+    });
+}
+
+function setBatchProgressValue(index, percentage, color) {
+    const row = document.getElementById(`batch-row-${index}`);
+    if (!row) return;
+    const fill = row.querySelector('.batch-progress-fill');
+    if (!fill) return;
+    fill.style.width = `${percentage}%`;
+    fill.style.backgroundColor = color || '';
+}
+
+function applyBatchControlState(status) {
+    state.batchSessionStatus = status;
+
+    const startBtn = document.getElementById('startBatchBtn');
+    const pauseBtn = document.getElementById('pauseBatchBtn');
+    const cancelBtn = document.getElementById('cancelBatchBtn');
+    const clearBtn = document.getElementById('clearBatchBtn');
+    const textarea = document.getElementById('batchUrls');
+    const formatSelect = document.getElementById('batchFormatSelect');
+    const qualitySelect = document.getElementById('batchQualitySelect');
+    const threadsSelect = document.getElementById('batchThreadsSelect');
+    const browseBtn = document.getElementById('browseBatchBtn');
+    const savePathInput = document.getElementById('batchSavePath');
+
+    if (!startBtn || !pauseBtn || !cancelBtn || !clearBtn) return;
+
+    const isRunning = status === 'running';
+    const isPaused = status === 'paused';
+    const hasSession = isRunning || isPaused;
+
+    startBtn.hidden = false;
+    pauseBtn.hidden = !hasSession;
+    cancelBtn.hidden = !hasSession;
+
+    if (isRunning) {
+        startBtn.textContent = '▶ Running';
+        startBtn.disabled = true;
+        pauseBtn.textContent = '⏸ Pause';
+        pauseBtn.disabled = false;
+        cancelBtn.disabled = false;
+    } else if (isPaused) {
+        startBtn.textContent = '▶ Resume';
+        startBtn.disabled = false;
+        pauseBtn.textContent = '⏸ Paused';
+        pauseBtn.disabled = true;
+        cancelBtn.disabled = false;
+    } else {
+        startBtn.textContent = '▶ Start Download';
+        startBtn.disabled = false;
+        pauseBtn.textContent = '⏸ Pause';
+        pauseBtn.disabled = false;
+        cancelBtn.disabled = false;
+    }
+
+    clearBtn.disabled = isRunning || isPaused;
+
+    if (textarea) textarea.disabled = isRunning || isPaused;
+    if (formatSelect) formatSelect.disabled = isRunning || isPaused;
+    if (qualitySelect) qualitySelect.disabled = isRunning;
+    if (threadsSelect) threadsSelect.disabled = isRunning;
+    if (browseBtn) browseBtn.disabled = isRunning || isPaused;
+    if (savePathInput) savePathInput.disabled = isRunning || isPaused;
+
+    refreshCustomSelectStates();
+}
+
 function setupBatchTab() {
     const clearBtn = document.getElementById('clearBatchBtn');
     const toggleCookieBtn = document.getElementById('toggleCookieBtn');
     const browseBtn = document.getElementById('browseBatchBtn');
     const startBtn = document.getElementById('startBatchBtn');
+    const pauseBtn = document.getElementById('pauseBatchBtn');
+    const cancelBtn = document.getElementById('cancelBatchBtn');
     const textarea = document.getElementById('batchUrls');
     const formatSelect = document.getElementById('batchFormatSelect');
     const qualitySelect = document.getElementById('batchQualitySelect');
@@ -299,7 +376,7 @@ function setupBatchTab() {
     const confirmCookieBtn = document.getElementById('confirmCookieBtn');
     const cookieAddedBadge = document.getElementById('cookieAddedBadge');
 
-    if (!clearBtn || !startBtn) return;
+    if (!clearBtn || !startBtn || !pauseBtn || !cancelBtn) return;
 
     if (threadsSelect) {
         threadsSelect.value = String(state.batchThreads);
@@ -310,10 +387,13 @@ function setupBatchTab() {
         });
     }
 
+    applyBatchControlState(state.batchSessionStatus);
+
     clearBtn.addEventListener('click', () => {
         textarea.value = '';
         const tbody = document.getElementById('batchTableBody');
         if (tbody) tbody.innerHTML = '';
+        state.downloadedFiles = {};
     });
 
     if (toggleCookieBtn && cookieInline && cookieInput && confirmCookieBtn) {
@@ -424,16 +504,37 @@ function setupBatchTab() {
     });
     
     startBtn.addEventListener('click', async () => {
+        const maxConcurrent = threadsSelect ? Number.parseInt(threadsSelect.value, 10) || 3 : 3;
+
+        if (state.batchSessionStatus === 'paused') {
+            try {
+                applyBatchControlState('running');
+                const result = await window.go.main.App.ResumeBatchDownload(
+                    formatSelect.value,
+                    qualitySelect.value,
+                    savePathInput.value,
+                    maxConcurrent
+                );
+                if (typeof result === 'string' && result.startsWith('Error:')) {
+                    throw new Error(result);
+                }
+            } catch (err) {
+                applyBatchControlState('paused');
+                showError('Error: ' + (err?.message || err));
+            }
+            return;
+        }
+
         const urls = textarea.value.split('\n').map(u => u.trim()).filter(u => u.length > 0);
         if (urls.length === 0) {
             showError('Please enter at least one URL');
             return;
         }
-        
-        startBtn.disabled = true;
+
         const tbody = document.getElementById('batchTableBody');
         tbody.innerHTML = '';
-        
+        state.downloadedFiles = {};
+
         urls.forEach((url, i) => {
             const row = document.createElement('tr');
             row.id = `batch-row-${i}`;
@@ -446,19 +547,44 @@ function setupBatchTab() {
             `;
             tbody.appendChild(row);
         });
-        
+
         try {
-            const maxConcurrent = threadsSelect ? Number.parseInt(threadsSelect.value, 10) || 3 : 3;
-            await window.go.main.App.StartBatchDownload(
+            applyBatchControlState('running');
+            const result = await window.go.main.App.StartBatchDownload(
                 urls,
                 formatSelect.value,
                 qualitySelect.value,
                 savePathInput.value,
                 maxConcurrent
             );
+            if (typeof result === 'string' && result.startsWith('Error:')) {
+                throw new Error(result);
+            }
         } catch (err) {
-            showError('Error: ' + err.message);
-            startBtn.disabled = false;
+            applyBatchControlState('idle');
+            showError('Error: ' + (err?.message || err));
+        }
+    });
+
+    pauseBtn.addEventListener('click', async () => {
+        pauseBtn.disabled = true;
+        try {
+            await window.go.main.App.PauseBatchDownload();
+        } catch (err) {
+            pauseBtn.disabled = false;
+            showError('Error: ' + (err?.message || err));
+        }
+    });
+
+    cancelBtn.addEventListener('click', async () => {
+        startBtn.disabled = true;
+        pauseBtn.disabled = true;
+        cancelBtn.disabled = true;
+        try {
+            await window.go.main.App.CancelBatchDownload();
+        } catch (err) {
+            applyBatchControlState(state.batchSessionStatus);
+            showError('Error: ' + (err?.message || err));
         }
     });
 }
@@ -598,6 +724,7 @@ function initCustomSelects() {
         }
 
         select.classList.add('hidden-select');
+        container.classList.toggle('disabled', !!select.disabled);
         const trigger = document.createElement('div');
         trigger.className = 'custom-select-trigger';
         // Set initial trigger text
@@ -625,12 +752,15 @@ function initCustomSelects() {
         });
         container.appendChild(optionsDiv);
         trigger.addEventListener('click', (e) => {
+            if (select.disabled) return;
             e.stopPropagation();
             const isOpen = container.classList.contains('open');
             document.querySelectorAll('.custom-select-container').forEach(c => c.classList.remove('open'));
             if (!isOpen) container.classList.add('open');
         });
     });
+
+    refreshCustomSelectStates();
 }
 
 function renderCompressFiles() {
@@ -809,8 +939,15 @@ function updateBatchStatus(index, status) {
         done: ['Download complete.'],
         error: ['Download failed.'],
         waiting: ['Waiting for download slot.'],
-        retrying: ['Retrying with temporary cookie...']
+        retrying: ['Retrying with temporary cookie...'],
+        paused: ['Paused. Resume sẽ tải lại từ đầu.'],
+        canceled: ['Canceled.']
     };
+
+    if (status === 'waiting' || status === 'paused' || status === 'canceled') {
+        setBatchProgressValue(index, 0);
+    }
+
     renderBatchStatusCell(index, status, details[status] || [status]);
 }
 
@@ -832,8 +969,8 @@ function renderBatchStatusCell(index, status, details = []) {
     const row = document.getElementById(`batch-row-${index}`);
     if (!row) return;
 
-    const icons = { downloading: '⏳', done: '✅', error: '❌', waiting: '⏳', retrying: '🔄' };
-    const texts = { downloading: 'Downloading', done: 'Done', error: 'Error', waiting: 'Waiting', retrying: 'Retrying' };
+    const icons = { downloading: '⏳', done: '✅', error: '❌', waiting: '⏳', retrying: '🔄', paused: '⏸', canceled: '✕' };
+    const texts = { downloading: 'Downloading', done: 'Done', error: 'Error', waiting: 'Waiting', retrying: 'Retrying', paused: 'Paused', canceled: 'Canceled' };
     const statusCell = row.querySelector('td:nth-child(4)');
     if (!statusCell) return;
 

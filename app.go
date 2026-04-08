@@ -32,6 +32,10 @@ type BatchDownloadState struct {
 	SavePath           string
 	MaxConcurrent      int
 	RestrictedFailures map[int]RestrictedFailure
+	ItemStates         map[int]string
+	ActiveCancels      map[int]context.CancelFunc
+	Status             string
+	SessionID          int64
 }
 
 type RestrictedFailure struct {
@@ -407,6 +411,173 @@ func normalizeBatchConcurrency(value int) int {
 	return value
 }
 
+func isTerminalBatchStatus(status string) bool {
+	return status == "done" || status == "error" || status == "canceled"
+}
+
+func cloneCancelFuncs(src map[int]context.CancelFunc) map[int]context.CancelFunc {
+	dst := make(map[int]context.CancelFunc, len(src))
+	for index, cancel := range src {
+		dst[index] = cancel
+	}
+	return dst
+}
+
+func (a *App) emitBatchStatuses(statuses map[int]string) {
+	for index, status := range statuses {
+		runtime.EventsEmit(a.ctx, "batch-status", map[string]interface{}{
+			"index":  index,
+			"status": status,
+		})
+	}
+}
+
+func (a *App) finalizeBatchRun(sessionID int64) {
+	a.batchMu.Lock()
+	if a.currentBatch == nil || a.currentBatch.SessionID != sessionID || a.currentBatch.Status != "running" {
+		a.batchMu.Unlock()
+		return
+	}
+
+	for _, status := range a.currentBatch.ItemStates {
+		if !isTerminalBatchStatus(status) {
+			a.batchMu.Unlock()
+			return
+		}
+	}
+
+	a.currentBatch.Status = "completed"
+	a.batchMu.Unlock()
+
+	runtime.EventsEmit(a.ctx, "batch-complete", map[string]interface{}{})
+}
+
+func (a *App) runBatchSession(sessionID int64) {
+	a.batchMu.Lock()
+	if a.currentBatch == nil || a.currentBatch.SessionID != sessionID || a.currentBatch.Status != "running" {
+		a.batchMu.Unlock()
+		return
+	}
+
+	pendingIndices := make([]int, 0)
+	for index, status := range a.currentBatch.ItemStates {
+		if status == "waiting" || status == "paused" {
+			pendingIndices = append(pendingIndices, index)
+		}
+	}
+
+	format := a.currentBatch.Format
+	quality := a.currentBatch.Quality
+	savePath := a.currentBatch.SavePath
+	maxConcurrent := a.currentBatch.MaxConcurrent
+	urls := append([]string(nil), a.currentBatch.URLs...)
+	a.batchMu.Unlock()
+
+	if len(pendingIndices) == 0 {
+		a.finalizeBatchRun(sessionID)
+		return
+	}
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxConcurrent)
+
+	for _, index := range pendingIndices {
+		url := strings.TrimSpace(urls[index])
+		if url == "" {
+			continue
+		}
+
+		wg.Add(1)
+		go func(index int, url string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			a.batchMu.Lock()
+			if a.currentBatch == nil || a.currentBatch.SessionID != sessionID || a.currentBatch.Status != "running" {
+				a.batchMu.Unlock()
+				return
+			}
+			if isTerminalBatchStatus(a.currentBatch.ItemStates[index]) {
+				a.batchMu.Unlock()
+				return
+			}
+
+			itemCtx, cancel := context.WithCancel(a.ctx)
+			a.currentBatch.ItemStates[index] = "downloading"
+			a.currentBatch.ActiveCancels[index] = cancel
+			a.batchMu.Unlock()
+
+			runtime.EventsEmit(a.ctx, "batch-status", map[string]interface{}{
+				"index":  index,
+				"status": "downloading",
+			})
+
+			err := DownloadVideo(itemCtx, index, url, format, quality, savePath)
+
+			a.batchMu.Lock()
+			if a.currentBatch != nil {
+				delete(a.currentBatch.ActiveCancels, index)
+			}
+			if a.currentBatch == nil || a.currentBatch.SessionID != sessionID {
+				a.batchMu.Unlock()
+				return
+			}
+			batchStatus := a.currentBatch.Status
+
+			if err == nil {
+				delete(a.currentBatch.RestrictedFailures, index)
+				a.currentBatch.ItemStates[index] = "done"
+				a.batchMu.Unlock()
+				runtime.EventsEmit(a.ctx, "batch-status", map[string]interface{}{
+					"index":  index,
+					"status": "done",
+				})
+				return
+			}
+
+			if err == context.Canceled || strings.Contains(err.Error(), context.Canceled.Error()) {
+				if batchStatus == "canceled" {
+					a.currentBatch.ItemStates[index] = "canceled"
+					a.batchMu.Unlock()
+					runtime.EventsEmit(a.ctx, "batch-status", map[string]interface{}{
+						"index":  index,
+						"status": "canceled",
+					})
+					return
+				}
+
+				a.currentBatch.ItemStates[index] = "paused"
+				a.batchMu.Unlock()
+				runtime.EventsEmit(a.ctx, "batch-status", map[string]interface{}{
+					"index":  index,
+					"status": "paused",
+				})
+				return
+			}
+
+			a.currentBatch.ItemStates[index] = "error"
+			a.batchMu.Unlock()
+
+			failure := classifyDownloadFailure(err, hasTemporaryCookie())
+			if failure.RequiresCookie {
+				a.trackRestrictedFailure(index, url, err.Error())
+			}
+
+			runtime.EventsEmit(a.ctx, "batch-error", map[string]interface{}{
+				"index":          index,
+				"error":          err.Error(),
+				"displayMessage": failure.DisplayMessage,
+				"details":        failure.Details,
+				"requiresCookie": failure.RequiresCookie,
+			})
+		}(index, url)
+	}
+
+	wg.Wait()
+	a.finalizeBatchRun(sessionID)
+}
+
 // StartBatchDownload starts batch downloading in parallel
 func (a *App) StartBatchDownload(urls []string, format, quality, savePath string, maxConcurrent int) string {
 	if len(urls) == 0 {
@@ -416,6 +587,17 @@ func (a *App) StartBatchDownload(urls []string, format, quality, savePath string
 	maxConcurrent = normalizeBatchConcurrency(maxConcurrent)
 
 	a.batchMu.Lock()
+	if a.currentBatch != nil && (a.currentBatch.Status == "running" || a.currentBatch.Status == "paused") {
+		a.batchMu.Unlock()
+		return "Error: Batch session is already active"
+	}
+
+	itemStates := make(map[int]string, len(urls))
+	for index := range urls {
+		itemStates[index] = "waiting"
+	}
+
+	sessionID := time.Now().UnixNano()
 	a.currentBatch = &BatchDownloadState{
 		URLs:               append([]string(nil), urls...),
 		Format:             format,
@@ -423,65 +605,105 @@ func (a *App) StartBatchDownload(urls []string, format, quality, savePath string
 		SavePath:           savePath,
 		MaxConcurrent:      maxConcurrent,
 		RestrictedFailures: make(map[int]RestrictedFailure),
+		ItemStates:         itemStates,
+		ActiveCancels:      make(map[int]context.CancelFunc),
+		Status:             "running",
+		SessionID:          sessionID,
 	}
 	a.batchMu.Unlock()
 
-	go func() {
-		results := make(map[string]bool)
-		var mu sync.Mutex
-		var wg sync.WaitGroup
-		sem := make(chan struct{}, maxConcurrent)
-
-		for i, url := range urls {
-			url = strings.TrimSpace(url)
-			if url == "" {
-				continue
-			}
-
-			wg.Add(1)
-			go func(i int, url string) {
-				defer wg.Done()
-				sem <- struct{}{}        // Chiếm chỗ (Acquire semaphore)
-				defer func() { <-sem }() // Nhả chỗ sau khi xong (Release semaphore)
-
-				runtime.EventsEmit(a.ctx, "batch-status", map[string]interface{}{
-					"index":  i,
-					"status": "downloading",
-				})
-
-				err := DownloadVideo(a.ctx, i, url, format, quality, savePath)
-
-				mu.Lock()
-				results[url] = err == nil
-				mu.Unlock()
-
-				if err != nil {
-					failure := classifyDownloadFailure(err, hasTemporaryCookie())
-					if failure.RequiresCookie {
-						a.trackRestrictedFailure(i, url, err.Error())
-					}
-
-					runtime.EventsEmit(a.ctx, "batch-error", map[string]interface{}{
-						"index":          i,
-						"error":          err.Error(),
-						"displayMessage": failure.DisplayMessage,
-						"details":        failure.Details,
-						"requiresCookie": failure.RequiresCookie,
-					})
-				} else {
-					a.clearRestrictedFailure(i)
-					runtime.EventsEmit(a.ctx, "batch-status", map[string]interface{}{
-						"index":  i,
-						"status": "done",
-					})
-				}
-			}(i, url)
-		}
-		wg.Wait()
-		runtime.EventsEmit(a.ctx, "batch-complete", results)
-	}()
+	go a.runBatchSession(sessionID)
 
 	return fmt.Sprintf("Batch download started with %d threads", maxConcurrent)
+}
+
+func (a *App) PauseBatchDownload() error {
+	a.batchMu.Lock()
+	if a.currentBatch == nil || a.currentBatch.Status != "running" {
+		a.batchMu.Unlock()
+		return fmt.Errorf("no running batch session")
+	}
+
+	a.currentBatch.Status = "paused"
+	updatedStatuses := make(map[int]string)
+	for index, status := range a.currentBatch.ItemStates {
+		if status == "waiting" || status == "downloading" {
+			a.currentBatch.ItemStates[index] = "paused"
+			updatedStatuses[index] = "paused"
+		}
+	}
+
+	cancels := cloneCancelFuncs(a.currentBatch.ActiveCancels)
+	a.batchMu.Unlock()
+
+	a.emitBatchStatuses(updatedStatuses)
+	for _, cancel := range cancels {
+		cancel()
+	}
+
+	runtime.EventsEmit(a.ctx, "batch-paused", map[string]interface{}{})
+	return nil
+}
+
+func (a *App) ResumeBatchDownload(format, quality, savePath string, maxConcurrent int) string {
+	maxConcurrent = normalizeBatchConcurrency(maxConcurrent)
+
+	a.batchMu.Lock()
+	if a.currentBatch == nil || a.currentBatch.Status != "paused" {
+		a.batchMu.Unlock()
+		return "Error: No paused batch session"
+	}
+
+	a.currentBatch.Format = format
+	a.currentBatch.Quality = quality
+	a.currentBatch.SavePath = savePath
+	a.currentBatch.MaxConcurrent = maxConcurrent
+	a.currentBatch.Status = "running"
+	a.currentBatch.SessionID = time.Now().UnixNano()
+	sessionID := a.currentBatch.SessionID
+
+	waitingStatuses := make(map[int]string)
+	for index, status := range a.currentBatch.ItemStates {
+		if status == "paused" {
+			a.currentBatch.ItemStates[index] = "waiting"
+			waitingStatuses[index] = "waiting"
+		}
+	}
+	a.batchMu.Unlock()
+
+	a.emitBatchStatuses(waitingStatuses)
+	runtime.EventsEmit(a.ctx, "batch-resumed", map[string]interface{}{})
+	go a.runBatchSession(sessionID)
+
+	return fmt.Sprintf("Batch download resumed with %d threads", maxConcurrent)
+}
+
+func (a *App) CancelBatchDownload() error {
+	a.batchMu.Lock()
+	if a.currentBatch == nil || (a.currentBatch.Status != "running" && a.currentBatch.Status != "paused") {
+		a.batchMu.Unlock()
+		return fmt.Errorf("no active batch session")
+	}
+
+	a.currentBatch.Status = "canceled"
+	updatedStatuses := make(map[int]string)
+	for index, status := range a.currentBatch.ItemStates {
+		if !isTerminalBatchStatus(status) {
+			a.currentBatch.ItemStates[index] = "canceled"
+			updatedStatuses[index] = "canceled"
+		}
+	}
+
+	cancels := cloneCancelFuncs(a.currentBatch.ActiveCancels)
+	a.batchMu.Unlock()
+
+	a.emitBatchStatuses(updatedStatuses)
+	for _, cancel := range cancels {
+		cancel()
+	}
+
+	runtime.EventsEmit(a.ctx, "batch-canceled", map[string]interface{}{})
+	return nil
 }
 
 // RetryDownload retries downloading a failed video
@@ -564,7 +786,7 @@ func (a *App) clearRestrictedFailure(index int) {
 
 func (a *App) retryRestrictedBatchDownloads() {
 	a.batchMu.Lock()
-	if a.currentBatch == nil || len(a.currentBatch.RestrictedFailures) == 0 {
+	if a.currentBatch == nil || a.currentBatch.Status != "running" || len(a.currentBatch.RestrictedFailures) == 0 {
 		a.batchMu.Unlock()
 		return
 	}
