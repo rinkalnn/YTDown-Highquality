@@ -30,7 +30,7 @@ export function SelectFolder(arg1:string):Promise<Array<string>>;
 
 export function SetTemporaryYouTubeCookie(arg1:string):Promise<void>;
 
-export function StartBatchDownload(arg1:Array<string>,arg2:string,arg3:string,arg4:string):Promise<string>;
+export function StartBatchDownload(arg1:Array<string>,arg2:string,arg3:string,arg4:string,arg5:number):Promise<string>;
 
 export function StartCompression(arg1:Array<string>,arg2:main.CompressionOptions):Promise<string>;
 

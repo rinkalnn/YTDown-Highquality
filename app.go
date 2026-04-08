@@ -30,6 +30,7 @@ type BatchDownloadState struct {
 	Format             string
 	Quality            string
 	SavePath           string
+	MaxConcurrent      int
 	RestrictedFailures map[int]RestrictedFailure
 }
 
@@ -396,11 +397,23 @@ func (a *App) StartDownload(url, format, quality, savePath string) string {
 	return "Download started"
 }
 
+func normalizeBatchConcurrency(value int) int {
+	if value < 1 {
+		return 3
+	}
+	if value > 10 {
+		return 10
+	}
+	return value
+}
+
 // StartBatchDownload starts batch downloading in parallel
-func (a *App) StartBatchDownload(urls []string, format, quality, savePath string) string {
+func (a *App) StartBatchDownload(urls []string, format, quality, savePath string, maxConcurrent int) string {
 	if len(urls) == 0 {
 		return "Error: No URLs provided"
 	}
+
+	maxConcurrent = normalizeBatchConcurrency(maxConcurrent)
 
 	a.batchMu.Lock()
 	a.currentBatch = &BatchDownloadState{
@@ -408,6 +421,7 @@ func (a *App) StartBatchDownload(urls []string, format, quality, savePath string
 		Format:             format,
 		Quality:            quality,
 		SavePath:           savePath,
+		MaxConcurrent:      maxConcurrent,
 		RestrictedFailures: make(map[int]RestrictedFailure),
 	}
 	a.batchMu.Unlock()
@@ -416,7 +430,7 @@ func (a *App) StartBatchDownload(urls []string, format, quality, savePath string
 		results := make(map[string]bool)
 		var mu sync.Mutex
 		var wg sync.WaitGroup
-		sem := make(chan struct{}, 3) // Giới hạn 3 video tải cùng lúc (Parallel)
+		sem := make(chan struct{}, maxConcurrent)
 
 		for i, url := range urls {
 			url = strings.TrimSpace(url)
@@ -467,7 +481,7 @@ func (a *App) StartBatchDownload(urls []string, format, quality, savePath string
 		runtime.EventsEmit(a.ctx, "batch-complete", results)
 	}()
 
-	return "Batch download started in parallel"
+	return fmt.Sprintf("Batch download started with %d threads", maxConcurrent)
 }
 
 // RetryDownload retries downloading a failed video

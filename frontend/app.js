@@ -8,6 +8,7 @@ const state = {
     savePath: '',
     currentFormat: 'MP4',
     currentQuality: 'Best Quality',
+    batchThreads: 3,
     wailsReady: false,
     selectedCompressFiles: [],
     temporaryCookieRaw: '',
@@ -290,6 +291,7 @@ function setupBatchTab() {
     const textarea = document.getElementById('batchUrls');
     const formatSelect = document.getElementById('batchFormatSelect');
     const qualitySelect = document.getElementById('batchQualitySelect');
+    const threadsSelect = document.getElementById('batchThreadsSelect');
     const qualityRow = document.getElementById('batchQualityRow');
     const savePathInput = document.getElementById('batchSavePath');
     const cookieInline = document.getElementById('cookieInline');
@@ -298,6 +300,15 @@ function setupBatchTab() {
     const cookieAddedBadge = document.getElementById('cookieAddedBadge');
 
     if (!clearBtn || !startBtn) return;
+
+    if (threadsSelect) {
+        threadsSelect.value = String(state.batchThreads);
+        threadsSelect.addEventListener('change', (event) => {
+            const value = Number.parseInt(event.target.value, 10);
+            state.batchThreads = Number.isNaN(value) ? 3 : Math.min(Math.max(value, 1), 10);
+            threadsSelect.value = String(state.batchThreads);
+        });
+    }
 
     clearBtn.addEventListener('click', () => {
         textarea.value = '';
@@ -437,7 +448,14 @@ function setupBatchTab() {
         });
         
         try {
-            await window.go.main.App.StartBatchDownload(urls, formatSelect.value, qualitySelect.value, savePathInput.value);
+            const maxConcurrent = threadsSelect ? Number.parseInt(threadsSelect.value, 10) || 3 : 3;
+            await window.go.main.App.StartBatchDownload(
+                urls,
+                formatSelect.value,
+                qualitySelect.value,
+                savePathInput.value,
+                maxConcurrent
+            );
         } catch (err) {
             showError('Error: ' + err.message);
             startBtn.disabled = false;

@@ -58,8 +58,8 @@ export function SetTemporaryYouTubeCookie(arg1) {
   return window['go']['main']['App']['SetTemporaryYouTubeCookie'](arg1);
 }
 
-export function StartBatchDownload(arg1, arg2, arg3, arg4) {
-  return window['go']['main']['App']['StartBatchDownload'](arg1, arg2, arg3, arg4);
+export function StartBatchDownload(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['StartBatchDownload'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function StartCompression(arg1, arg2) {

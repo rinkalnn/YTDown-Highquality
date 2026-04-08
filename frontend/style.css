@@ -219,10 +219,18 @@ body {
     gap: 12px;
 }
 
+#batch .settings {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 120px;
+}
+
 .setting-row {
     display: flex;
     flex-direction: column;
     gap: 6px;
+}
+
+.setting-row-right {
+    align-self: end;
 }
 
 .setting-row label,
