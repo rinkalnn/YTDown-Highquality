@@ -30,7 +30,7 @@ type VideoInfo struct {
 // DownloadVideo downloads a video using yt-dlp
 func DownloadVideo(ctx context.Context, index int, url, format, quality, savePath string) error {
 	ytdlpPath := getResourcePath("yt-dlp")
-	
+
 	// Force using system/brew ffmpeg and IGNORE bundled one
 	ffmpegPath := ""
 	for _, p := range []string{
@@ -61,7 +61,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 	}
 
 	// Fetch metadata first to get title, thumbnail, and ID
-	info, _ := GetVideoMetadata(url)
+	info, _ := GetVideoMetadata(ctx, url)
 	if info != nil {
 		runtime.EventsEmit(ctx, "video-info", map[string]interface{}{
 			"index":     index,
@@ -75,7 +75,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 	args := buildDownloadArgs(format, quality, savePath, ffmpegPath)
 	args = append(args, url)
 	// Add verbose for better debugging in app.log
-	args = append(args, "--verbose")
+	// args = append(args, "--verbose")
 
 	LogInfo("[DL] Running command: %s with %d args: %v", ytdlpPath, len(args), args)
 
@@ -91,12 +91,12 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 
 	// CombinedOutput is simpler but we need to stream progress,
 	// so we'll pipe stderr to stdout to avoid buffer deadlocks.
-	cmd.Stderr = cmd.Stdout
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
 	}
+	cmd.Stderr = cmd.Stdout
 
 	if err := cmd.Start(); err != nil {
 		return err
@@ -129,17 +129,17 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		
+
 		// Log every line from yt-dlp for debugging, but prefix it to distinguish
-		// We'll use LogDebug for regular progress to avoid cluttering INFO if needed, 
+		// We'll use LogDebug for regular progress to avoid cluttering INFO if needed,
 		// but since we want to catch "hangs", INFO is safer for now.
 		if strings.Contains(line, "ERROR:") || strings.Contains(line, "WARNING:") {
 			LogError("[yt-dlp] %s", line)
 		} else {
 			// Only log important transitions or status updates to app.log to keep it readable
 			// but enough to see where it "hangs"
-			if strings.Contains(line, "[download]") || strings.Contains(line, "[ExtractAudio]") || 
-			   strings.Contains(line, "[Merger]") || strings.Contains(line, "[ffmpeg]") {
+			if strings.Contains(line, "[download]") || strings.Contains(line, "[ExtractAudio]") ||
+				strings.Contains(line, "[Merger]") || strings.Contains(line, "[ffmpeg]") {
 				LogInfo("[yt-dlp] %s", line)
 			}
 		}
@@ -342,20 +342,20 @@ func parseProgress(line string) map[string]interface{} {
 }
 
 // GetVideoMetadata fetches video title, thumbnail and ID
-func GetVideoMetadata(url string) (*VideoInfo, error) {
+func GetVideoMetadata(ctx context.Context, url string) (*VideoInfo, error) {
 	ytdlpPath := getResourcePath("yt-dlp")
 	if ytdlpPath == "" {
 		return nil, fmt.Errorf("yt-dlp not found")
 	}
 
 	// Get title, thumbnail URL, and ID from yt-dlp
-	args := []string{"--get-title", "--get-thumbnail", "--get-id", "--no-warnings"}
+	args := []string{"--get-title", "--get-thumbnail", "--get-id", "--no-warnings", "--no-playlist"}
 	if cookieArgs := manager.GetCookieArgs("yt-dlp"); len(cookieArgs) > 0 {
 		args = append(args, cookieArgs...)
 	}
 	args = append(args, url)
 
-	cmd := exec.Command(ytdlpPath, args...)
+	cmd := exec.CommandContext(ctx, ytdlpPath, args...)
 
 	// Capture both stdout and stderr
 	output, err := cmd.CombinedOutput()

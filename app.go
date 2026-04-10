@@ -402,7 +402,7 @@ func (a *App) ClearCookieConfig() error {
 	manager.config.SelectedBrowser = ""
 	manager.config.ManualHeader = ""
 	manager.mu.Unlock()
-	
+
 	manager.state.mu.Lock()
 	manager.state.header = ""
 	if manager.state.tempFile != "" {
@@ -410,7 +410,7 @@ func (a *App) ClearCookieConfig() error {
 		manager.state.tempFile = ""
 	}
 	manager.state.mu.Unlock()
-	
+
 	manager.SaveConfig()
 	LogInfo("[Cookie] Configuration cleared by user")
 	return nil
@@ -482,7 +482,7 @@ func (a *App) OpenFile(filePath string) {
 
 // GetVideoInfo fetches video metadata using yt-dlp
 func (a *App) GetVideoInfo(url string) *VideoInfo {
-	info, err := GetVideoMetadata(url)
+	info, err := GetVideoMetadata(a.ctx, url)
 	if err != nil {
 		return nil
 	}
@@ -1254,4 +1254,3 @@ func (a *App) StartGalleryDownload(url, savePath string) string {
 
 	return "Gallery download started"
 }
-
