@@ -27,15 +27,26 @@ Homebrew là trình quản lý gói dành cho macOS. Hãy copy dòng lệnh sau 
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-**Lưu ý quan trọng:** Sau khi chạy xong lệnh trên, bạn cần thêm Homebrew vào đường dẫn hệ thống (PATH) bằng cách chạy 2 lệnh sau:
+**⚠️ Lưu ý quan trọng:** Sau khi cài xong, bạn cần thêm Homebrew vào PATH.
+
+**Nếu dùng Mac chip Apple Silicon (M1/M2/M3):**
 ```bash
-(echo; echo 'eval "$(/opt/homebrew/bin/brew shellenv)"') >> ~/.zshrc
+(echo; echo 'eval "$(/opt/homebrew/bin/brew shellenv)"') >> ~/.zprofile
 eval "$(/opt/homebrew/bin/brew shellenv)"
 ```
 
+**Nếu dùng Mac chip Intel (x86_64):**
+```bash
+(echo; echo 'eval "$(/usr/local/bin/brew shellenv)"') >> ~/.zprofile
+eval "$(/usr/local/bin/brew shellenv)"
+```
+
+
+> 💡 **Không biết chip gì?** Nhấn vào menu Apple () → **About This Mac** → xem dòng **Chip** hoặc **Processor**.
+
 Chạy lệnh này để khởi động lại zsh.
 ```bash
-source ~/.zshrc
+source ~/.zprofile
 ```
 
 ### 3. Cài đặt các công cụ hỗ trợ
