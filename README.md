@@ -33,10 +33,15 @@ Homebrew là trình quản lý gói dành cho macOS. Hãy copy dòng lệnh sau 
 eval "$(/opt/homebrew/bin/brew shellenv)"
 ```
 
+Chạy lệnh này để khởi động lại zsh.
+```bash
+source ~/.zshrc
+```
+
 ### 3. Cài đặt các công cụ hỗ trợ
 Sau khi cài xong Homebrew, hãy dán lệnh này để cài đặt các thành phần cần thiết:
 ```bash
-brew install yt-dlp ffmpeg go
+brew install yt-dlp ffmpeg gallery-dl go
 ```
 
 ### 4. Cài đặt Wails CLI
@@ -90,6 +95,7 @@ Dành cho các bạn muốn đóng góp hoặc tùy chỉnh ứng dụng:
 - Chọn chất lượng video mong muốn (1080p, 720p, 4k...).
 - Tự động kiểm tra và cập nhật `yt-dlp` ngay trong App.
 - Hiển thị Thumbnail video, xem video trực tiếp từ Thumbnails.
+- Download ảnh cuộn từ X, Instagram, Tikok...
 
 ---
 
