@@ -14,7 +14,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
-	runtimepkg "runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -31,10 +30,34 @@ type VideoInfo struct {
 // DownloadVideo downloads a video using yt-dlp
 func DownloadVideo(ctx context.Context, index int, url, format, quality, savePath string) error {
 	ytdlpPath := getResourcePath("yt-dlp")
-	ffmpegPath := getResourcePath("ffmpeg")
+	
+	// Force using system/brew ffmpeg and IGNORE bundled one
+	ffmpegPath := ""
+	for _, p := range []string{
+		"/opt/homebrew/bin/ffmpeg",
+		"/usr/local/bin/ffmpeg",
+		"/usr/bin/ffmpeg",
+	} {
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			ffmpegPath = p
+			break
+		}
+	}
+	// Fallback to searching in PATH if not found in common brew/system locations
+	if ffmpegPath == "" {
+		if path, err := exec.LookPath("ffmpeg"); err == nil {
+			ffmpegPath = path
+		}
+	}
 
 	if ytdlpPath == "" {
 		return fmt.Errorf("yt-dlp not found. Please install it or use the Setup Dependencies button.")
+	}
+
+	if ffmpegPath == "" {
+		LogError("[DL] ffmpeg not found in brew or system paths. Merging will likely fail.")
+	} else {
+		LogInfo("[DL] Using system ffmpeg from: %s", ffmpegPath)
 	}
 
 	// Fetch metadata first to get title, thumbnail, and ID
@@ -51,18 +74,26 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 	// Build yt-dlp arguments based on format and quality
 	args := buildDownloadArgs(format, quality, savePath, ffmpegPath)
 	args = append(args, url)
+	// Add verbose for better debugging in app.log
+	args = append(args, "--verbose")
 
-	println("[DL] Running command:", ytdlpPath, "with", len(args), "args")
+	LogInfo("[DL] Running command: %s with %d args: %v", ytdlpPath, len(args), args)
 
 	cmd := exec.CommandContext(ctx, ytdlpPath, args...)
 
-	// Capture stdout for progress tracking
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
+	// Ensure /opt/homebrew/bin and other common paths are in PATH so yt-dlp can find ffmpeg, deno, etc.
+	existingPath := os.Getenv("PATH")
+	newPath := "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+	if existingPath != "" {
+		newPath = existingPath + ":" + newPath
 	}
+	cmd.Env = append(os.Environ(), "PATH="+newPath)
 
-	stderr, err := cmd.StderrPipe()
+	// CombinedOutput is simpler but we need to stream progress,
+	// so we'll pipe stderr to stdout to avoid buffer deadlocks.
+	cmd.Stderr = cmd.Stdout
+
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
 	}
@@ -71,7 +102,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 		return err
 	}
 
-	// Read progress output
+	// Read combined progress output
 	scanner := bufio.NewScanner(stdout)
 
 	// Set a larger buffer for the scanner (up to 1MB) to handle long output lines
@@ -98,6 +129,20 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		
+		// Log every line from yt-dlp for debugging, but prefix it to distinguish
+		// We'll use LogDebug for regular progress to avoid cluttering INFO if needed, 
+		// but since we want to catch "hangs", INFO is safer for now.
+		if strings.Contains(line, "ERROR:") || strings.Contains(line, "WARNING:") {
+			LogError("[yt-dlp] %s", line)
+		} else {
+			// Only log important transitions or status updates to app.log to keep it readable
+			// but enough to see where it "hangs"
+			if strings.Contains(line, "[download]") || strings.Contains(line, "[ExtractAudio]") || 
+			   strings.Contains(line, "[Merger]") || strings.Contains(line, "[ffmpeg]") {
+				LogInfo("[yt-dlp] %s", line)
+			}
+		}
 
 		if strings.Contains(line, "[download]") {
 			if strings.Contains(line, "Destination:") {
@@ -134,7 +179,6 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 			}
 		}
 		if strings.Contains(line, "[Merger]") || strings.Contains(line, "[ffmpeg]") || strings.Contains(line, "[VideoConvertor]") {
-			println("[DL] Post-processing:", line)
 			// For merger, extract the final file path if available
 			if strings.Contains(line, "Merging formats into \"") {
 				re := regexp.MustCompile(`Merging formats into "([^"]+)"`)
@@ -152,25 +196,15 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 	}
 
 	if err := scanner.Err(); err != nil {
-		println("[DL] scanner error:", err.Error())
-	}
-
-	// Also read stderr for error messages
-	var stderrOutput strings.Builder
-	errScanner := bufio.NewScanner(stderr)
-	for errScanner.Scan() {
-		line := errScanner.Text()
-		println("[DL] stderr:", line)
-		stderrOutput.WriteString(line + "\n")
+		LogError("[DL] scanner error: %v", err)
 	}
 
 	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
+			LogInfo("[DL] Download cancelled by user")
 			return ctx.Err()
 		}
-		if stderrOutput.Len() > 0 {
-			return fmt.Errorf("download failed: %s", stderrOutput.String())
-		}
+		LogError("[DL] Command failed with error: %v", err)
 		return fmt.Errorf("download failed: %v", err)
 	}
 
@@ -192,12 +226,12 @@ func buildDownloadArgs(format, quality, savePath, ffmpegPath string) []string {
 	switch format {
 	case "MP4":
 		if quality == "Best" || quality == "Best Quality" {
-			args = append(args, "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]")
+			// Matches the user's manual successful command: bestvideo+bestaudio/best
+			args = append(args, "-f", "bestvideo+bestaudio/best")
 		} else {
 			// Map quality to height
 			qualityHeight := qualityToHeight(quality)
-			args = append(args, "-f",
-				fmt.Sprintf("bestvideo[height<=%s][ext=mp4]+bestaudio[ext=m4a]/best[height<=%s]", qualityHeight, qualityHeight))
+			args = append(args, "-f", fmt.Sprintf("bestvideo[height<=%s]+bestaudio/best[height<=%s]", qualityHeight, qualityHeight))
 		}
 		args = append(args, "--merge-output-format", "mp4")
 
@@ -215,19 +249,50 @@ func buildDownloadArgs(format, quality, savePath, ffmpegPath string) []string {
 		"--no-playlist",
 		"--no-continue",
 		"--force-overwrites",
-		"--concurrent-fragments", strconv.Itoa(runtimepkg.NumCPU()),
 		"-o", filepath.Join(savePath, "%(title)s.%(ext)s"),
+		"--referer", "https://www.youtube.com/",
 	)
 
 	if ffmpegPath != "" {
 		args = append(args, "--ffmpeg-location", ffmpegPath)
 	}
 
-	if cookiePath := getTemporaryCookieFile(); cookiePath != "" {
-		args = append(args, "--cookies", cookiePath)
+	// Get cookie and browser settings
+	manager.mu.RLock()
+	cookieMode := manager.config.Mode
+	selectedBrowser := manager.config.SelectedBrowser
+	manager.mu.RUnlock()
+
+	// Apply browser-specific User-Agent if a browser is selected or manual cookie is used
+	userAgent := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36" // Default Chrome
+	if cookieMode == CookieModeBrowser && selectedBrowser != "" {
+		userAgent = getUserAgentForBrowser(selectedBrowser)
+	}
+	args = append(args, "--user-agent", userAgent)
+
+	if cookieArgs := manager.GetCookieArgs("yt-dlp"); len(cookieArgs) > 0 {
+		args = append(args, cookieArgs...)
 	}
 
 	return args
+}
+
+// getUserAgentForBrowser returns a realistic User-Agent for common browsers
+func getUserAgentForBrowser(browser string) string {
+	switch strings.ToLower(browser) {
+	case "chrome", "google-chrome":
+		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+	case "firefox":
+		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:124.0) Gecko/20100101 Firefox/124.0"
+	case "safari":
+		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+	case "edge":
+		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0"
+	case "brave":
+		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+	default:
+		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+	}
 }
 
 // qualityToHeight converts quality string to pixel height
@@ -285,8 +350,8 @@ func GetVideoMetadata(url string) (*VideoInfo, error) {
 
 	// Get title, thumbnail URL, and ID from yt-dlp
 	args := []string{"--get-title", "--get-thumbnail", "--get-id", "--no-warnings"}
-	if cookiePath := getTemporaryCookieFile(); cookiePath != "" {
-		args = append(args, "--cookies", cookiePath)
+	if cookieArgs := manager.GetCookieArgs("yt-dlp"); len(cookieArgs) > 0 {
+		args = append(args, cookieArgs...)
 	}
 	args = append(args, url)
 
@@ -294,12 +359,13 @@ func GetVideoMetadata(url string) (*VideoInfo, error) {
 
 	// Capture both stdout and stderr
 	output, err := cmd.CombinedOutput()
+	outputStr := strings.TrimSpace(string(output))
 
 	if err != nil {
+		LogError("[Metadata] yt-dlp failed: %v, output: %s", err, outputStr)
 		return nil, err
 	}
 
-	outputStr := strings.TrimSpace(string(output))
 	lines := strings.Split(outputStr, "\n")
 
 	if len(lines) < 3 {
@@ -372,8 +438,8 @@ func GetPlaylistVideos(url string) ([]string, error) {
 	}
 
 	args := []string{"--flat-playlist", "-J"}
-	if cookiePath := getTemporaryCookieFile(); cookiePath != "" {
-		args = append(args, "--cookies", cookiePath)
+	if cookieArgs := manager.GetCookieArgs("yt-dlp"); len(cookieArgs) > 0 {
+		args = append(args, cookieArgs...)
 	}
 	args = append(args, url)
 
@@ -402,25 +468,9 @@ func GetPlaylistVideos(url string) ([]string, error) {
 	return videos, nil
 }
 
-// getResourcePath finds binary in bundle, user app support, or system paths
+// getResourcePath finds binary in system paths (brew) ONLY
 func getResourcePath(name string) string {
-	// 1. Try bundled resources first (for .app distribution)
-	execPath, err := os.Executable()
-	if err == nil {
-		// For .app bundle: ../Resources/
-		bundled := filepath.Join(filepath.Dir(execPath), "..", "Resources", name)
-		if info, err := os.Stat(bundled); err == nil && !info.IsDir() {
-			return bundled
-		}
-
-		// Also check current directory (for debug/dev)
-		localPath := filepath.Join(filepath.Dir(execPath), "resources", name)
-		if info, err := os.Stat(localPath); err == nil && !info.IsDir() {
-			return localPath
-		}
-	}
-
-	// 2. Try common system paths (Homebrew, etc.)
+	// 1. Try common system paths (Homebrew, etc.)
 	for _, p := range []string{
 		"/opt/homebrew/bin/" + name,
 		"/usr/local/bin/" + name,
@@ -431,7 +481,7 @@ func getResourcePath(name string) string {
 		}
 	}
 
-	// 3. Last resort: try system PATH
+	// 2. Last resort: try system PATH
 	if path, err := exec.LookPath(name); err == nil {
 		return path
 	}

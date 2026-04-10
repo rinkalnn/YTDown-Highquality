@@ -1,5 +1,8 @@
 .PHONY: help setup install dev build build-dmg run clean lint
 
+# Extract version from wails.json
+VERSION := $(shell jq -r .info.productversion wails.json)
+
 help:
 	@echo "YTDown - YouTube Downloader for macOS"
 	@echo "======================================"
@@ -28,11 +31,8 @@ build:
 	@bash build.sh
 
 build-dmg: build
-	@echo "📦 Creating DMG distribution..."
-	@hdiutil create -volname "YTDown" \
-		-srcfolder dist/YTDown.app \
-		-ov -format UDZO \
-		dist/YTDown-1.0.0.dmg
+	@echo "📦 DMG distribution is already created by build.sh"
+	@echo "   Check: dist/YTDown-$(VERSION).dmg"
 
 run: build
 	@open dist/YTDown.app

@@ -219,9 +219,38 @@ body {
     gap: 12px;
 }
 
-#batch .settings {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 120px;
+#batch .settings, #gallery .settings {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
 }
+
+.custom-option.multi {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+}
+
+.custom-option.multi input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.custom-option.multi label {
+    flex: 1;
+    cursor: pointer;
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.custom-select-options.multi-select {
+    padding: 0;
+    max-height: 250px;
+    overflow-y: auto;
+}
+
 
 .setting-row {
     display: flex;
@@ -411,6 +440,7 @@ select:focus {
     display: flex;
     gap: 8px;
     align-items: center;
+    position: relative; /* Thêm anchor cho lớp phủ */
 }
 
 .batch-input {
@@ -420,10 +450,16 @@ select:focus {
 }
 
 .cookie-inline {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     display: flex;
     gap: 8px;
     align-items: center;
-    flex: 1;
+    background: var(--bg-primary);
+    z-index: 20;
 }
 
 .cookie-inline[hidden] {
@@ -467,6 +503,69 @@ select:focus {
 
 .cookie-confirm-btn {
     white-space: nowrap;
+}
+
+/* Cookie Dropdown */
+.cookie-dropdown-container {
+    position: relative;
+    display: inline-block;
+}
+
+.cookie-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 5px);
+    left: 0;
+    width: 220px;
+    background: #252525;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    z-index: 1000;
+    padding: 8px 0;
+    animation: slideDown 0.2s ease;
+}
+
+.cookie-dropdown-item {
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.cookie-dropdown-item:hover {
+    background: var(--accent-blue);
+    color: white;
+}
+
+.cookie-dropdown-item.selected {
+    color: var(--accent-blue);
+    font-weight: 600;
+    background: rgba(10, 132, 255, 0.1);
+}
+
+.cookie-dropdown-item.selected:hover {
+    color: white;
+    background: var(--accent-blue);
+}
+
+.cookie-dropdown-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 8px 0;
+}
+
+.cookie-dropdown-header {
+    padding: 6px 16px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: 0.7;
 }
 
 .cookie-warning {

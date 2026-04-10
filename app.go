@@ -19,10 +19,31 @@ import (
 
 // App struct
 type App struct {
-	ctx          context.Context
-	config       *Config
-	batchMu      sync.Mutex
-	currentBatch *BatchDownloadState
+	ctx            context.Context
+	config         *Config
+	batchMu        sync.Mutex
+	currentBatch   *BatchDownloadState
+	galleryMu      sync.Mutex
+	currentGallery *GalleryBatchState
+}
+
+type GalleryBatchState struct {
+	URLs          []string
+	Options       GalleryDownloadOptions
+	ItemStates    map[int]string
+	ActiveCancels map[int]context.CancelFunc
+	Status        string
+	SessionID     int64
+}
+
+type GalleryDownloadOptions struct {
+	SavePath     string   `json:"savePath"`
+	Threads      int      `json:"threads"`
+	Browser      string   `json:"browser"`
+	UgoiraToWebm bool     `json:"ugoiraToWebm"`
+	Formats      []string `json:"formats"`
+	Archive      bool     `json:"archive"`
+	ExtraArgs    string   `json:"extraArgs"`
 }
 
 type BatchDownloadState struct {
@@ -62,7 +83,7 @@ func NewApp() *App {
 	return &App{}
 }
 
-// GetVersionStatus returns version info for yt-dlp and ffmpeg
+// GetVersionStatus returns version info for yt-dlp, ffmpeg and gallery-dl
 func (a *App) GetVersionStatus() []BinaryVersion {
 	var versions []BinaryVersion
 
@@ -94,6 +115,43 @@ func (a *App) GetVersionStatus() []BinaryVersion {
 			Latest:     latest,
 			CanUpgrade: current != "" && latest != "" && current != latest,
 			UpdatePath: "https://github.com/yt-dlp/yt-dlp/releases/latest",
+		})
+	}
+
+	// Check gallery-dl
+	gallerydlPath := getResourcePath("gallery-dl")
+	if gallerydlPath != "" {
+		current := ""
+		cmd := exec.Command(gallerydlPath, "--version")
+		if out, err := cmd.Output(); err == nil {
+			current = strings.TrimSpace(string(out))
+			// Handle "gallery-dl 1.28.1" format
+			if parts := strings.Fields(current); len(parts) >= 2 {
+				current = parts[1]
+			}
+		}
+
+		latest := current
+		// Fetch latest from GitHub
+		client := &http.Client{Timeout: 5 * time.Second}
+		if resp, err := client.Get("https://api.github.com/repos/mikf/gallery-dl/releases/latest"); err == nil {
+			defer resp.Body.Close()
+			var data struct {
+				TagName string `json:"tag_name"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
+				latest = data.TagName
+				// Normalize tag name (e.g., "v1.28.1" to "1.28.1")
+				latest = strings.TrimPrefix(latest, "v")
+			}
+		}
+
+		versions = append(versions, BinaryVersion{
+			Name:       "gallery-dl",
+			Current:    current,
+			Latest:     latest,
+			CanUpgrade: current != "" && latest != "" && current != latest,
+			UpdatePath: "https://github.com/mikf/gallery-dl/releases/latest",
 		})
 	}
 
@@ -137,31 +195,37 @@ type AppInfo struct {
 func (a *App) GetAppInfo() AppInfo {
 	return AppInfo{
 		Name:    "YTDown",
-		Version: "v2026.04.08",
+		Version: Version,
 		Author:  "Justin Nguyen",
 	}
 }
 
 // UpgradeBinary attempts to upgrade a binary
 func (a *App) UpgradeBinary(name string) error {
-	if name != "yt-dlp" {
+	if name != "yt-dlp" && name != "gallery-dl" {
 		return fmt.Errorf("upgrade not supported for %s", name)
 	}
 
-	ytdlpPath := getResourcePath("yt-dlp")
-	if ytdlpPath == "" {
-		return fmt.Errorf("yt-dlp not found")
+	binaryPath := getResourcePath(name)
+	if binaryPath == "" {
+		return fmt.Errorf("%s not found", name)
 	}
 
-	runtime.EventsEmit(a.ctx, "upgrade-status", "Upgrading yt-dlp via self-update...")
+	runtime.EventsEmit(a.ctx, "upgrade-status", fmt.Sprintf("Upgrading %s via self-update...", name))
 
 	// Try self-update first
-	cmd := exec.Command(ytdlpPath, "-U")
+	var cmd *exec.Cmd
+	if name == "yt-dlp" {
+		cmd = exec.Command(binaryPath, "-U")
+	} else {
+		cmd = exec.Command(binaryPath, "--update")
+	}
+
 	if output, err := cmd.CombinedOutput(); err == nil {
-		runtime.EventsEmit(a.ctx, "upgrade-status", "yt-dlp upgraded successfully.")
+		runtime.EventsEmit(a.ctx, "upgrade-status", fmt.Sprintf("%s upgraded successfully.", name))
 		return nil
 	} else {
-		fmt.Printf("yt-dlp -U failed: %v\nOutput: %s\n", err, string(output))
+		fmt.Printf("%s update failed: %v\nOutput: %s\n", name, err, string(output))
 	}
 
 	// Fallback to brew
@@ -178,16 +242,16 @@ func (a *App) UpgradeBinary(name string) error {
 
 	if brewPath != "" {
 		runtime.EventsEmit(a.ctx, "upgrade-status", "Self-update failed. Trying Homebrew...")
-		cmd = exec.Command(brewPath, "upgrade", "yt-dlp")
+		cmd = exec.Command(brewPath, "upgrade", name)
 		if output, err := cmd.CombinedOutput(); err == nil {
-			runtime.EventsEmit(a.ctx, "upgrade-status", "yt-dlp upgraded via Homebrew.")
+			runtime.EventsEmit(a.ctx, "upgrade-status", fmt.Sprintf("%s upgraded via Homebrew.", name))
 			return nil
 		} else {
-			return fmt.Errorf("failed to upgrade yt-dlp: %s", string(output))
+			return fmt.Errorf("failed to upgrade %s: %s", name, string(output))
 		}
 	}
 
-	return fmt.Errorf("failed to upgrade yt-dlp and Homebrew not found")
+	return fmt.Errorf("failed to upgrade %s and Homebrew not found", name)
 }
 
 // LaunchSetupTerminal creates and runs a setup script in a new Terminal window
@@ -245,14 +309,14 @@ setup_shell "$HOME/.zprofile" "$LINE"
 setup_shell "$HOME/.zshrc" "$LINE"
 setup_shell "$HOME/.bash_profile" "$LINE"
 
-echo "📦 Installing/Updating yt-dlp and ffmpeg..."
+echo "📦 Installing/Updating dependencies..."
 $BREW_PATH update
-$BREW_PATH install yt-dlp ffmpeg || $BREW_PATH upgrade yt-dlp ffmpeg
+$BREW_PATH install yt-dlp ffmpeg gallery-dl || $BREW_PATH upgrade yt-dlp ffmpeg gallery-dl
 
 echo ""
 echo "✅ SETUP COMPLETE!"
 echo "------------------------------------------"
-echo "1. yt-dlp and ffmpeg are now installed."
+echo "1. yt-dlp, ffmpeg, and gallery-dl are now installed."
 echo "2. Homebrew PATH has been added to your shell profiles."
 echo ""
 echo "👉 THIS WINDOW WILL CLOSE IN 5 SECONDS."
@@ -276,33 +340,80 @@ exit
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.loadConfig()
+	manager.LoadConfig()
 
 	// Check binaries after a short delay
 	go func() {
 		time.Sleep(1 * time.Second)
 		status := a.CheckBinaries()
-		if !status["ytdlp"].(bool) || !status["ffmpeg"].(bool) {
+		if !status["ytdlp"].(bool) || !status["ffmpeg"].(bool) || !status["gallerydl"].(bool) {
 			// Emit event to frontend - the frontend should show a setup button/modal
-			runtime.EventsEmit(ctx, "binary-warning", "yt-dlp or ffmpeg is missing.")
+			runtime.EventsEmit(ctx, "binary-warning", "One or more dependencies are missing.")
 		}
 	}()
 }
 
-// CheckBinaries checks if yt-dlp and ffmpeg are installed
+// CheckBinaries checks if yt-dlp, ffmpeg and gallery-dl are installed
 func (a *App) CheckBinaries() map[string]interface{} {
 	ytdlpPath := getResourcePath("yt-dlp")
 	ffmpegPath := getResourcePath("ffmpeg")
+	gallerydlPath := getResourcePath("gallery-dl")
 
 	return map[string]interface{}{
-		"ytdlp":  ytdlpPath != "",
-		"ffmpeg": ffmpegPath != "",
+		"ytdlp":     ytdlpPath != "",
+		"ffmpeg":    ffmpegPath != "",
+		"gallerydl": gallerydlPath != "",
 	}
 }
 
 // shutdown is called at application termination
 func (a *App) shutdown(ctx context.Context) {
 	clearTemporaryYouTubeCookie()
+	manager.SaveConfig()
 	a.saveConfig()
+}
+
+// GetAvailableBrowsers returns a list of installed browsers for cookie extraction
+func (a *App) GetAvailableBrowsers() []string {
+	return GetInstalledBrowsers()
+}
+
+// GetCookieConfig returns the current cookie configuration
+func (a *App) GetCookieConfig() CookieConfig {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	return manager.config
+}
+
+// UpdateCookieConfig updates the cookie configuration
+func (a *App) UpdateCookieConfig(mode string, browser string) error {
+	manager.mu.Lock()
+	manager.config.Mode = CookieMode(mode)
+	manager.config.SelectedBrowser = browser
+	manager.mu.Unlock()
+	manager.SaveConfig()
+	return nil
+}
+
+// ClearCookieConfig resets cookie configuration to default (none)
+func (a *App) ClearCookieConfig() error {
+	manager.mu.Lock()
+	manager.config.Mode = CookieModeNone
+	manager.config.SelectedBrowser = ""
+	manager.config.ManualHeader = ""
+	manager.mu.Unlock()
+	
+	manager.state.mu.Lock()
+	manager.state.header = ""
+	if manager.state.tempFile != "" {
+		_ = os.RemoveAll(filepath.Dir(manager.state.tempFile))
+		manager.state.tempFile = ""
+	}
+	manager.state.mu.Unlock()
+	
+	manager.SaveConfig()
+	LogInfo("[Cookie] Configuration cleared by user")
+	return nil
 }
 
 // loadConfig loads configuration from file
@@ -334,15 +445,15 @@ func (a *App) saveConfig() {
 
 // OpenFolderDialog opens native folder picker
 func (a *App) OpenFolderDialog() string {
-	println("[DEBUG] OpenFolderDialog called")
+	LogDebug("OpenFolderDialog called")
 	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Select Save Folder",
 	})
 	if err != nil {
-		println("[ERROR] OpenDirectoryDialog:", err.Error())
+		LogError("OpenDirectoryDialog: %v", err)
 		return a.config.SavePath
 	}
-	println("[DEBUG] Folder selected:", dir)
+	LogDebug("Folder selected: %s", dir)
 	a.config.SavePath = dir
 	return dir
 }
@@ -384,16 +495,16 @@ func (a *App) StartDownload(url, format, quality, savePath string) string {
 		return "Error: URL is empty"
 	}
 
-	println("[DEBUG] StartDownload called:", url, format, quality, savePath)
+	LogDebug("StartDownload called: %s %s %s %s", url, format, quality, savePath)
 
 	go func() {
-		println("[DEBUG] Download goroutine started")
+		LogDebug("Download goroutine started")
 		err := DownloadVideo(a.ctx, -1, url, format, quality, savePath)
 		if err != nil {
-			println("[ERROR]", err.Error())
+			LogError("Download error: %v", err)
 			runtime.EventsEmit(a.ctx, "download-error", err.Error())
 		} else {
-			println("[SUCCESS] Download complete")
+			LogInfo("Download complete")
 			runtime.EventsEmit(a.ctx, "download-complete", savePath)
 		}
 	}()
@@ -913,35 +1024,234 @@ func (a *App) SelectFolder(fileType string) []string {
 	return files
 }
 
-// StartCompression starts compressing a list of files
-func (a *App) StartCompression(files []string, options CompressionOptions) string {
-	if len(files) == 0 {
-		return "Error: No files selected"
+func (a *App) finalizeGalleryBatchRun(sessionID int64) {
+	a.galleryMu.Lock()
+	if a.currentGallery == nil || a.currentGallery.SessionID != sessionID || a.currentGallery.Status != "running" {
+		a.galleryMu.Unlock()
+		return
 	}
 
-	go func() {
-		for i, file := range files {
-			runtime.EventsEmit(a.ctx, "compression-status", map[string]interface{}{
-				"index":  i,
-				"status": "processing",
+	for _, status := range a.currentGallery.ItemStates {
+		if !isTerminalBatchStatus(status) {
+			a.galleryMu.Unlock()
+			return
+		}
+	}
+
+	a.currentGallery.Status = "completed"
+	a.galleryMu.Unlock()
+
+	runtime.EventsEmit(a.ctx, "gallery-batch-complete", map[string]interface{}{})
+}
+
+func (a *App) runGalleryBatchSession(sessionID int64) {
+	a.galleryMu.Lock()
+	if a.currentGallery == nil || a.currentGallery.SessionID != sessionID || a.currentGallery.Status != "running" {
+		a.galleryMu.Unlock()
+		return
+	}
+
+	pendingIndices := make([]int, 0)
+	for index, status := range a.currentGallery.ItemStates {
+		if status == "waiting" {
+			pendingIndices = append(pendingIndices, index)
+		}
+	}
+
+	options := a.currentGallery.Options
+	urls := append([]string(nil), a.currentGallery.URLs...)
+	maxConcurrent := options.Threads
+	if maxConcurrent < 1 {
+		maxConcurrent = 1
+	}
+	a.galleryMu.Unlock()
+
+	if len(pendingIndices) == 0 {
+		a.finalizeGalleryBatchRun(sessionID)
+		return
+	}
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxConcurrent)
+
+	for _, index := range pendingIndices {
+		url := strings.TrimSpace(urls[index])
+		if url == "" {
+			continue
+		}
+
+		wg.Add(1)
+		go func(index int, url string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			a.galleryMu.Lock()
+			if a.currentGallery == nil || a.currentGallery.SessionID != sessionID || a.currentGallery.Status != "running" {
+				a.galleryMu.Unlock()
+				return
+			}
+			if isTerminalBatchStatus(a.currentGallery.ItemStates[index]) {
+				a.galleryMu.Unlock()
+				return
+			}
+
+			itemCtx, cancel := context.WithCancel(a.ctx)
+			a.currentGallery.ItemStates[index] = "downloading"
+			a.currentGallery.ActiveCancels[index] = cancel
+			a.galleryMu.Unlock()
+
+			runtime.EventsEmit(a.ctx, "gallery-status", map[string]interface{}{
+				"index":  index,
+				"status": "downloading",
 			})
 
-			err := CompressFile(a.ctx, file, options, i)
+			// Convert options to separate arguments if needed
+			err := DownloadGalleryWithOpts(itemCtx, index, url, options)
 
-			if err != nil {
-				runtime.EventsEmit(a.ctx, "compression-error", map[string]interface{}{
-					"index": i,
-					"error": err.Error(),
-				})
-			} else {
-				runtime.EventsEmit(a.ctx, "compression-status", map[string]interface{}{
-					"index":  i,
+			a.galleryMu.Lock()
+			if a.currentGallery != nil {
+				delete(a.currentGallery.ActiveCancels, index)
+			}
+			if a.currentGallery == nil || a.currentGallery.SessionID != sessionID {
+				a.galleryMu.Unlock()
+				return
+			}
+
+			if err == nil {
+				a.currentGallery.ItemStates[index] = "done"
+				a.galleryMu.Unlock()
+				runtime.EventsEmit(a.ctx, "gallery-status", map[string]interface{}{
+					"index":  index,
 					"status": "done",
 				})
+				return
 			}
+
+			if err == context.Canceled || strings.Contains(err.Error(), context.Canceled.Error()) {
+				a.currentGallery.ItemStates[index] = "canceled"
+				a.galleryMu.Unlock()
+				runtime.EventsEmit(a.ctx, "gallery-status", map[string]interface{}{
+					"index":  index,
+					"status": "canceled",
+				})
+				return
+			}
+
+			a.currentGallery.ItemStates[index] = "error"
+			a.galleryMu.Unlock()
+
+			runtime.EventsEmit(a.ctx, "gallery-status", map[string]interface{}{
+				"index":   index,
+				"status":  "error",
+				"message": err.Error(),
+			})
+		}(index, url)
+	}
+
+	wg.Wait()
+	a.finalizeGalleryBatchRun(sessionID)
+}
+
+// StartGalleryBatchDownload starts downloading multiple galleries
+func (a *App) StartGalleryBatchDownload(urls []string, options GalleryDownloadOptions) string {
+	if len(urls) == 0 {
+		return "Error: No URLs provided"
+	}
+
+	a.galleryMu.Lock()
+	if a.currentGallery != nil && a.currentGallery.Status == "running" {
+		a.galleryMu.Unlock()
+		return "Error: A gallery download is already in progress"
+	}
+
+	itemStates := make(map[int]string, len(urls))
+	for index := range urls {
+		itemStates[index] = "waiting"
+	}
+
+	sessionID := time.Now().UnixNano()
+	a.currentGallery = &GalleryBatchState{
+		URLs:          append([]string(nil), urls...),
+		Options:       options,
+		ItemStates:    itemStates,
+		ActiveCancels: make(map[int]context.CancelFunc),
+		Status:        "running",
+		SessionID:     sessionID,
+	}
+	a.galleryMu.Unlock()
+
+	go a.runGalleryBatchSession(sessionID)
+
+	return "Gallery batch download started"
+}
+
+// CancelGalleryDownload cancels all active gallery downloads
+func (a *App) CancelGalleryDownload() error {
+	a.galleryMu.Lock()
+	if a.currentGallery == nil || a.currentGallery.Status != "running" {
+		a.galleryMu.Unlock()
+		return fmt.Errorf("no active gallery download")
+	}
+
+	a.currentGallery.Status = "canceled"
+	updatedStatuses := make(map[int]string)
+	for index, status := range a.currentGallery.ItemStates {
+		if !isTerminalBatchStatus(status) {
+			a.currentGallery.ItemStates[index] = "canceled"
+			updatedStatuses[index] = "canceled"
 		}
-		runtime.EventsEmit(a.ctx, "compression-complete", "All files processed")
+	}
+
+	cancels := make(map[int]context.CancelFunc, len(a.currentGallery.ActiveCancels))
+	for i, c := range a.currentGallery.ActiveCancels {
+		cancels[i] = c
+	}
+	a.galleryMu.Unlock()
+
+	for index, status := range updatedStatuses {
+		runtime.EventsEmit(a.ctx, "gallery-status", map[string]interface{}{
+			"index":  index,
+			"status": status,
+		})
+	}
+
+	for _, cancel := range cancels {
+		cancel()
+	}
+
+	runtime.EventsEmit(a.ctx, "gallery-batch-complete", map[string]interface{}{})
+	return nil
+}
+
+// SetGalleryCookie sets a temporary cookie for gallery-dl
+func (a *App) SetGalleryCookie(raw string) error {
+	return setGalleryCookie(raw)
+}
+
+// StartGalleryDownload starts downloading images from a gallery URL (Legacy)
+func (a *App) StartGalleryDownload(url, savePath string) string {
+	if strings.TrimSpace(url) == "" {
+		return "Error: URL is empty"
+	}
+
+	LogDebug("StartGalleryDownload called: %s %s", url, savePath)
+
+	go func() {
+		LogDebug("Gallery download goroutine started")
+		// Using index -2 to distinguish from video batch indices if needed,
+		// or just use 0 if it's single URL for now.
+		// The frontend will handle the UI row.
+		err := DownloadGallery(a.ctx, 0, url, savePath)
+		if err != nil {
+			LogError("Gallery download error: %v", err)
+			runtime.EventsEmit(a.ctx, "gallery-error", err.Error())
+		} else {
+			LogInfo("Gallery download complete")
+			// download-complete is already emitted inside DownloadGallery
+		}
 	}()
 
-	return "Compression started"
+	return "Gallery download started"
 }
+

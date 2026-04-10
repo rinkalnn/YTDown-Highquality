@@ -6,6 +6,10 @@ export function CancelBatchDownload() {
   return window['go']['main']['App']['CancelBatchDownload']();
 }
 
+export function CancelGalleryDownload() {
+  return window['go']['main']['App']['CancelGalleryDownload']();
+}
+
 export function CheckBinaries() {
   return window['go']['main']['App']['CheckBinaries']();
 }
@@ -14,8 +18,20 @@ export function CheckPlaylist(arg1) {
   return window['go']['main']['App']['CheckPlaylist'](arg1);
 }
 
+export function ClearCookieConfig() {
+  return window['go']['main']['App']['ClearCookieConfig']();
+}
+
 export function GetAppInfo() {
   return window['go']['main']['App']['GetAppInfo']();
+}
+
+export function GetAvailableBrowsers() {
+  return window['go']['main']['App']['GetAvailableBrowsers']();
+}
+
+export function GetCookieConfig() {
+  return window['go']['main']['App']['GetCookieConfig']();
 }
 
 export function GetDefaultSavePath() {
@@ -66,6 +82,10 @@ export function SelectFolder(arg1) {
   return window['go']['main']['App']['SelectFolder'](arg1);
 }
 
+export function SetGalleryCookie(arg1) {
+  return window['go']['main']['App']['SetGalleryCookie'](arg1);
+}
+
 export function SetTemporaryYouTubeCookie(arg1) {
   return window['go']['main']['App']['SetTemporaryYouTubeCookie'](arg1);
 }
@@ -74,12 +94,20 @@ export function StartBatchDownload(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['StartBatchDownload'](arg1, arg2, arg3, arg4, arg5);
 }
 
-export function StartCompression(arg1, arg2) {
-  return window['go']['main']['App']['StartCompression'](arg1, arg2);
-}
-
 export function StartDownload(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['StartDownload'](arg1, arg2, arg3, arg4);
+}
+
+export function StartGalleryBatchDownload(arg1, arg2) {
+  return window['go']['main']['App']['StartGalleryBatchDownload'](arg1, arg2);
+}
+
+export function StartGalleryDownload(arg1, arg2) {
+  return window['go']['main']['App']['StartGalleryDownload'](arg1, arg2);
+}
+
+export function UpdateCookieConfig(arg1, arg2) {
+  return window['go']['main']['App']['UpdateCookieConfig'](arg1, arg2);
 }
 
 export function UpgradeBinary(arg1) {

@@ -4,7 +4,9 @@
 
 set -e
 
-VERSION="2026.04.10"
+# Generate version based on current date (yyyy.mm.dd)
+VERSION=$(date +"%Y.%m.%d")
+YEAR=$(date +"%Y")
 OUTPUT_DIR="dist"
 APP_NAME="YTDown"
 APP_BUNDLE="build/bin/$APP_NAME.app"
@@ -14,12 +16,23 @@ DMG_STAGING_DIR="$OUTPUT_DIR/dmg-staging"
 echo "🏗️  Building $APP_NAME v$VERSION"
 echo "=================================="
 
+# Update wails.json with the new version and year
+if command -v jq &> /dev/null; then
+    echo "📝 Updating wails.json version to $VERSION..."
+    # Update productversion and copyright year
+    tmp=$(mktemp)
+    jq ".info.productversion = \"$VERSION\" | .info.copyright = \"Copyright © $YEAR\"" wails.json > "$tmp" && mv "$tmp" wails.json
+else
+    echo "⚠️  jq not found, skipping wails.json auto-update."
+fi
+
 # Clean previous builds
 rm -rf "$APP_BUNDLE" dist/
 
 # Build for macOS (universal binary)
 echo "📦 Building universal binary (Apple Silicon + Intel)..."
 wails build -platform darwin -tags universal \
+    -ldflags "-X main.Version=$VERSION" \
     -o "$APP_NAME" \
     -nsis=false
 

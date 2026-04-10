@@ -4,11 +4,19 @@ import {main} from '../models';
 
 export function CancelBatchDownload():Promise<void>;
 
+export function CancelGalleryDownload():Promise<void>;
+
 export function CheckBinaries():Promise<Record<string, any>>;
 
 export function CheckPlaylist(arg1:string):Promise<Record<string, any>>;
 
+export function ClearCookieConfig():Promise<void>;
+
 export function GetAppInfo():Promise<main.AppInfo>;
+
+export function GetAvailableBrowsers():Promise<Array<string>>;
+
+export function GetCookieConfig():Promise<main.CookieConfig>;
 
 export function GetDefaultSavePath():Promise<string>;
 
@@ -34,13 +42,19 @@ export function SelectFiles(arg1:string):Promise<Array<string>>;
 
 export function SelectFolder(arg1:string):Promise<Array<string>>;
 
+export function SetGalleryCookie(arg1:string):Promise<void>;
+
 export function SetTemporaryYouTubeCookie(arg1:string):Promise<void>;
 
 export function StartBatchDownload(arg1:Array<string>,arg2:string,arg3:string,arg4:string,arg5:number):Promise<string>;
 
-export function StartCompression(arg1:Array<string>,arg2:main.CompressionOptions):Promise<string>;
-
 export function StartDownload(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
+
+export function StartGalleryBatchDownload(arg1:Array<string>,arg2:main.GalleryDownloadOptions):Promise<string>;
+
+export function StartGalleryDownload(arg1:string,arg2:string):Promise<string>;
+
+export function UpdateCookieConfig(arg1:string,arg2:string):Promise<void>;
 
 export function UpgradeBinary(arg1:string):Promise<void>;
 

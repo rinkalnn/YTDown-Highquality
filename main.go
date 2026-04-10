@@ -12,7 +12,15 @@ import (
 //go:embed all:frontend
 var assets embed.FS
 
+// Version is set during build using -ldflags
+var Version = "Dev"
+
 func main() {
+	if err := InitLogger(); err != nil {
+		panic(err)
+	}
+	defer CloseLogger()
+
 	app := NewApp()
 
 	err := wails.Run(&options.App{

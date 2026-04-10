@@ -36,26 +36,44 @@ export namespace main {
 	        this.updatePath = source["updatePath"];
 	    }
 	}
-	export class CompressionOptions {
-	    type: string;
-	    quality: string;
-	    customQuality: number;
-	    useSlowPreset: boolean;
-	    format: string;
-	    savePath: string;
+	export class CookieConfig {
+	    mode: string;
+	    selected_browser: string;
+	    manual_header?: string;
 	
 	    static createFrom(source: any = {}) {
-	        return new CompressionOptions(source);
+	        return new CookieConfig(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.type = source["type"];
-	        this.quality = source["quality"];
-	        this.customQuality = source["customQuality"];
-	        this.useSlowPreset = source["useSlowPreset"];
-	        this.format = source["format"];
+	        this.mode = source["mode"];
+	        this.selected_browser = source["selected_browser"];
+	        this.manual_header = source["manual_header"];
+	    }
+	}
+	export class GalleryDownloadOptions {
+	    savePath: string;
+	    threads: number;
+	    browser: string;
+	    ugoiraToWebm: boolean;
+	    formats: string[];
+	    archive: boolean;
+	    extraArgs: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new GalleryDownloadOptions(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.savePath = source["savePath"];
+	        this.threads = source["threads"];
+	        this.browser = source["browser"];
+	        this.ugoiraToWebm = source["ugoiraToWebm"];
+	        this.formats = source["formats"];
+	        this.archive = source["archive"];
+	        this.extraArgs = source["extraArgs"];
 	    }
 	}
 	export class VideoInfo {

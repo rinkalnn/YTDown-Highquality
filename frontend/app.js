@@ -9,15 +9,22 @@ const state = {
     currentFormat: 'MP4',
     currentQuality: 'Best Quality',
     batchThreads: 3,
+    galleryThreads: 3,
     wailsReady: false,
     selectedCompressFiles: [],
-    temporaryCookieRaw: '',
+    cookieConfig: {
+        mode: 'none',
+        selected_browser: '',
+        manual_header: ''
+    },
+    availableBrowsers: [],
     temporaryCookieDraft: '',
     maskedCookieValue: '',
     isSubmittingCookie: false,
     cookieHasError: false,
     downloadedFiles: {}, // Store index -> localFilePath
-    batchSessionStatus: 'idle'
+    batchSessionStatus: 'idle',
+    gallerySessionStatus: 'idle'
 };
 
 // Wait counter to prevent infinite loops
@@ -76,7 +83,7 @@ function waitForWails() {
 async function initializeApp() {
     console.log('[BOOT] App initialization started');
     
-    // Load default save path
+    // Load default save path and cookie config
     if (state.wailsReady) {
         try {
             const path = await window.go.main.App.GetDefaultSavePath();
@@ -85,9 +92,16 @@ async function initializeApp() {
             if (bsp) bsp.value = path;
             const csp = document.getElementById('compressSavePath');
             if (csp) csp.value = path;
-            console.log('[BOOT] Default path set:', path);
+            const gsp = document.getElementById('gallerySavePath');
+            if (gsp) gsp.value = path;
+
+            // Load cookie config and browsers
+            state.cookieConfig = await window.go.main.App.GetCookieConfig();
+            state.availableBrowsers = await window.go.main.App.GetAvailableBrowsers();
+            console.log('[BOOT] Cookie config loaded:', state.cookieConfig);
+            console.log('[BOOT] Available browsers:', state.availableBrowsers);
         } catch (err) {
-            console.error('[BOOT] Error loading path:', err);
+            console.error('[BOOT] Error loading initialization data:', err);
         }
     } else {
         console.log('[BOOT] Wails not ready, using browser-only mode');
@@ -96,10 +110,14 @@ async function initializeApp() {
         if (bsp) bsp.value = '[Wails not ready]';
         const csp = document.getElementById('compressSavePath');
         if (csp) csp.value = '[Wails not ready]';
+        const gsp = document.getElementById('gallerySavePath');
+        if (gsp) gsp.value = '[Wails not ready]';
     }
     
     setupTabs();
+    setupCookieDropdown();
     setupBatchTab();
+    setupGalleryTab();
     setupGlobalStatusTooltip();
     setupCompressTab();
     setupGoEvents();
@@ -108,9 +126,508 @@ async function initializeApp() {
     
     if (state.wailsReady) {
         checkUpdates();
+        refreshCookieUI();
     }
     
     console.log('[BOOT] Initialization complete!');
+}
+
+function setupCookieDropdown() {
+    const mainBtns = [
+        document.getElementById('cookieMainBtn'),
+        document.getElementById('galleryCookieMainBtn')
+    ];
+    const menu = document.getElementById('cookieDropdownMenu');
+    const browserList = document.getElementById('browserList');
+
+    if (!menu || !browserList) return;
+
+    // Populate browser list
+    const browserNames = {
+        chrome: 'Chrome',
+        brave: 'Brave',
+        edge: 'Edge',
+        safari: 'Safari',
+        firefox: 'Firefox',
+        opera: 'Opera',
+        vivaldi: 'Vivaldi'
+    };
+
+    const updateBrowserList = () => {
+        browserList.innerHTML = '';
+        if (state.availableBrowsers.length === 0) {
+            const item = document.createElement('div');
+            item.className = 'cookie-dropdown-item';
+            item.style.opacity = '0.5';
+            item.style.fontSize = '11px';
+            item.textContent = 'No browsers detected';
+            browserList.appendChild(item);
+            return;
+        }
+
+        state.availableBrowsers.forEach(id => {
+            const item = document.createElement('div');
+            item.className = 'cookie-dropdown-item';
+            if (state.cookieConfig.mode === 'browser' && state.cookieConfig.selected_browser === id) {
+                item.classList.add('selected');
+            }
+            item.innerHTML = `🌐 ${browserNames[id] || id}`;
+            item.onclick = async (e) => {
+                e.stopPropagation();
+                try {
+                    await window.go.main.App.UpdateCookieConfig('browser', id);
+                    state.cookieConfig.mode = 'browser';
+                    state.cookieConfig.selected_browser = id;
+                    state.cookieConfig.manual_header = '';
+                    menu.hidden = true;
+                    refreshCookieUI();
+                } catch (err) {
+                    console.error('Failed to update cookie config:', err);
+                }
+            };
+            browserList.appendChild(item);
+        });
+    };
+
+    mainBtns.forEach(btn => {
+        if (!btn) return;
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            const willShow = menu.hidden;
+            // Reposition menu relative to the clicked button's container
+            const container = btn.parentElement;
+            container.appendChild(menu);
+            menu.hidden = !willShow;
+            if (!menu.hidden) {
+                updateBrowserList();
+            }
+        };
+    });
+
+    // Manual mode click
+    const manualItem = menu.querySelector('[data-mode="manual"]');
+    if (manualItem) {
+        manualItem.onclick = (e) => {
+            e.stopPropagation();
+            menu.hidden = true;
+            // Open the manual input inline (either video or gallery depending on current tab)
+            const activeTab = document.querySelector('.tab-content.active').id;
+            const inlineId = activeTab === 'gallery' ? 'galleryCookieInline' : 'cookieInline';
+            const inputId = activeTab === 'gallery' ? 'galleryCookieInput' : 'cookieInput';
+            
+            const inline = document.getElementById(inlineId);
+            const input = document.getElementById(inputId);
+            
+            if (inline && input) {
+                inline.hidden = false;
+                state.cookieHasError = false;
+                input.value = state.temporaryCookieDraft || state.maskedCookieValue || '';
+                setTimeout(() => input.focus(), 0);
+            }
+        };
+    }
+
+    // Clear Cookie click
+    const clearCookieBtn = document.getElementById('clearCookieBtn');
+    if (clearCookieBtn) {
+        clearCookieBtn.onclick = async (e) => {
+            e.stopPropagation();
+            menu.hidden = true;
+            try {
+                await window.go.main.App.ClearCookieConfig();
+                state.cookieConfig = {
+                    mode: 'none',
+                    selected_browser: '',
+                    manual_header: ''
+                };
+                state.maskedCookieValue = '';
+                state.temporaryCookieDraft = '';
+                refreshCookieUI();
+            } catch (err) {
+                console.error('Failed to clear cookie config:', err);
+            }
+        };
+    }
+
+    // Close menu or manual input when clicking outside
+    document.addEventListener('click', (event) => {
+        // Close dropdown menu
+        menu.hidden = true;
+
+        // Close manual input overlays if clicked outside
+        const inlines = [
+            document.getElementById('cookieInline'),
+            document.getElementById('galleryCookieInline')
+        ];
+        
+        inlines.forEach(inline => {
+            if (inline && !inline.hidden) {
+                const target = event.target;
+                if (!inline.contains(target)) {
+                    inline.hidden = true;
+                    const input = inline.querySelector('input');
+                    if (input) input.value = '';
+                }
+            }
+        });
+    });
+}
+
+function refreshCookieUI() {
+    const mainBtns = [
+        document.getElementById('cookieMainBtn'),
+        document.getElementById('galleryCookieMainBtn')
+    ];
+    const badges = [
+        document.getElementById('cookieAddedBadge'),
+        document.getElementById('galleryCookieAddedBadge')
+    ];
+    const galleryBrowserRow = document.getElementById('galleryBrowserRow');
+
+    const browserNames = {
+        chrome: 'Chrome',
+        brave: 'Brave',
+        edge: 'Edge',
+        safari: 'Safari',
+        firefox: 'Firefox',
+        opera: 'Opera',
+        vivaldi: 'Vivaldi'
+    };
+
+    let btnText = 'Add cookie';
+    let badgeHidden = true;
+
+    if (state.cookieConfig.mode === 'browser' && state.cookieConfig.selected_browser) {
+        btnText = `Cookie: ${browserNames[state.cookieConfig.selected_browser] || state.cookieConfig.selected_browser}`;
+        badgeHidden = false;
+        if (galleryBrowserRow) galleryBrowserRow.style.display = 'none';
+    } else if (state.cookieConfig.mode === 'manual') {
+        btnText = 'Cookie: Manual';
+        badgeHidden = false;
+        if (galleryBrowserRow) galleryBrowserRow.style.display = 'flex';
+    } else {
+        if (galleryBrowserRow) galleryBrowserRow.style.display = 'flex';
+    }
+
+    mainBtns.forEach(btn => { if (btn) btn.textContent = btnText; });
+    badges.forEach(badge => { if (badge) badge.hidden = badgeHidden; });
+}
+
+function setupGalleryTab() {
+    const clearBtn = document.getElementById('clearGalleryBtn');
+    const browseBtn = document.getElementById('browseGalleryBtn');
+    const startBtn = document.getElementById('startGalleryBtn');
+    const cancelBtn = document.getElementById('cancelGalleryBtn');
+    const urlsTextarea = document.getElementById('galleryUrls');
+    const threadsSelect = document.getElementById('galleryThreadsSelect');
+    const browserSelect = document.getElementById('galleryBrowserSelect');
+    const ugoiraCheckbox = document.getElementById('galleryUgoiraToWebm');
+    const savePathInput = document.getElementById('gallerySavePath');
+    const openFolderBtn = document.getElementById('openGalleryFolderBtn');
+    const cookieInline = document.getElementById('galleryCookieInline');
+    const cookieInput = document.getElementById('galleryCookieInput');
+    const confirmCookieBtn = document.getElementById('confirmGalleryCookieBtn');
+    const cookieAddedBadge = document.getElementById('galleryCookieAddedBadge');
+
+    if (!clearBtn || !startBtn || !urlsTextarea || !savePathInput) return;
+
+    // --- Media Formats Dynamic Rendering ---
+    const mediaFormats = [
+        { 
+            group: 'Images', 
+            items: [
+                { ext: 'jpg', default: true },
+                { ext: 'jpeg', default: true },
+                { ext: 'png', default: true },
+                { ext: 'webp', default: false },
+                { ext: 'gif', default: false },
+                { ext: 'heic', default: false },
+                { ext: 'avif', default: false }
+            ]
+        },
+        { 
+            group: 'Videos', 
+            items: [
+                { ext: 'mp4', default: false },
+                { ext: 'webm', default: false },
+                { ext: 'mkv', default: false },
+                { ext: 'mov', default: false },
+                { ext: 'avi', default: false }
+            ]
+        }
+    ];
+
+    const formatsContainer = document.getElementById('galleryFormatsOptions');
+    const mediaListContainer = document.getElementById('galleryMediaList');
+    const formatsTrigger = document.getElementById('galleryFormatsTrigger');
+    const allCheckbox = document.getElementById('fmt-all');
+
+    if (mediaListContainer && formatsTrigger) {
+        mediaListContainer.innerHTML = ''; // Clear
+        
+        mediaFormats.forEach(group => {
+            // Group header
+            const header = document.createElement('div');
+            header.className = 'cookie-dropdown-header';
+            header.style.padding = '8px 12px';
+            header.style.fontSize = '10px';
+            header.style.color = 'var(--text-secondary)';
+            header.style.textTransform = 'uppercase';
+            header.textContent = group.group === 'Images' ? '🖼 Images' : '🎬 Videos';
+            mediaListContainer.appendChild(header);
+
+            // Group items
+            group.items.forEach(item => {
+                const opt = document.createElement('div');
+                opt.className = 'custom-option multi';
+                opt.dataset.value = item.ext;
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `fmt-${item.ext}`;
+                checkbox.checked = item.default;
+                
+                const label = document.createElement('label');
+                label.htmlFor = `fmt-${item.ext}`;
+                label.textContent = item.ext.toUpperCase();
+                
+                opt.appendChild(checkbox);
+                opt.appendChild(label);
+                mediaListContainer.appendChild(opt);
+
+                opt.onclick = (e) => {
+                    if (e.target !== checkbox && e.target !== label) {
+                        checkbox.checked = !checkbox.checked;
+                        checkbox.dispatchEvent(new Event('change'));
+                    }
+                };
+            });
+        });
+
+        const formatCheckboxes = mediaListContainer.querySelectorAll('input[type="checkbox"]');
+        
+        const updateTriggerText = () => {
+            const selected = Array.from(formatCheckboxes)
+                .filter(cb => cb.checked)
+                .map(cb => cb.id.replace('fmt-', '').toUpperCase());
+            
+            if (selected.length === 0) {
+                formatsTrigger.textContent = 'None';
+            } else if (selected.length === formatCheckboxes.length) {
+                formatsTrigger.textContent = 'All Formats';
+            } else if (selected.length > 3) {
+                // Show first 3 and ... to avoid layout break
+                formatsTrigger.textContent = selected.slice(0, 3).join(', ') + '...';
+            } else {
+                formatsTrigger.textContent = selected.join(', ');
+            }
+        };
+
+        allCheckbox?.addEventListener('change', () => {
+            formatCheckboxes.forEach(cb => cb.checked = allCheckbox.checked);
+            updateTriggerText();
+        });
+
+        formatCheckboxes.forEach(cb => {
+            cb.addEventListener('change', () => {
+                const allChecked = Array.from(formatCheckboxes).every(c => c.checked);
+                if (allCheckbox) allCheckbox.checked = allChecked;
+                updateTriggerText();
+            });
+        });
+
+        document.getElementById('galleryFormatsTrigger').onclick = (e) => {
+            e.stopPropagation();
+            document.querySelectorAll('.custom-select-container').forEach(c => c.classList.remove('open'));
+            document.getElementById('galleryFormatsContainer').classList.toggle('open');
+        };
+
+        updateTriggerText();
+    }
+    // --- End Media Formats Logic ---
+
+    if (threadsSelect) {
+        threadsSelect.value = String(state.galleryThreads);
+        threadsSelect.addEventListener('change', (event) => {
+            const value = Number.parseInt(event.target.value, 10);
+            state.galleryThreads = Number.isNaN(value) ? 3 : Math.min(Math.max(value, 1), 10);
+            threadsSelect.value = String(state.galleryThreads);
+        });
+    }
+
+    applyGalleryControlState('idle');
+
+    savePathInput.value = state.savePath;
+
+    clearBtn.addEventListener('click', () => {
+        urlsTextarea.value = '';
+        const tbody = document.getElementById('galleryTableBody');
+        if (tbody) tbody.innerHTML = '';
+        clearGalleryResultMessage();
+    });
+
+    if (cookieInline && cookieInput && confirmCookieBtn) {
+        cookieInput.addEventListener('paste', (event) => {
+            const pasted = event.clipboardData?.getData('text') || '';
+            if (!pasted) return;
+            event.preventDefault();
+            state.temporaryCookieDraft = pasted;
+            cookieInput.value = pasted;
+        });
+
+        cookieInput.addEventListener('input', (event) => {
+            state.temporaryCookieDraft = event.target.value;
+        });
+
+        confirmCookieBtn.addEventListener('click', async () => {
+            const rawCookie = state.temporaryCookieDraft.trim();
+            if (!rawCookie) {
+                if (!state.maskedCookieValue) {
+                    showGalleryError('Cookie error: please paste a Cookie header first');
+                } else {
+                    cookieInline.hidden = true;
+                }
+                return;
+            }
+
+            try {
+                await window.go.main.App.SetTemporaryYouTubeCookie(rawCookie);
+                state.cookieConfig.mode = 'manual';
+                state.maskedCookieValue = maskCookieValue(rawCookie);
+                state.temporaryCookieDraft = '';
+                cookieInline.hidden = true;
+                cookieInput.value = '';
+                clearGalleryResultMessage();
+                refreshCookieUI();
+            } catch (err) {
+                showGalleryError('Cookie error: ' + (err?.message || err));
+            }
+        });
+    }
+
+    browseBtn.addEventListener('click', async () => {
+        if (!state.wailsReady) return;
+        const path = await window.go.main.App.OpenFolderDialog();
+        if (path) {
+            savePathInput.value = path;
+            state.savePath = path;
+        }
+    });
+
+    if (openFolderBtn) {
+        openFolderBtn.addEventListener('click', () => {
+            const currentPath = savePathInput.value || state.savePath;
+            if (state.wailsReady) window.go.main.App.OpenSaveFolder(currentPath);
+        });
+    }
+
+    startBtn.addEventListener('click', async () => {
+        const urls = urlsTextarea.value.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+        if (urls.length === 0) {
+            showGalleryError('Please enter at least one gallery URL');
+            return;
+        }
+
+        const tbody = document.getElementById('galleryTableBody');
+        tbody.innerHTML = ''; 
+
+        urls.forEach((url, i) => {
+            const row = document.createElement('tr');
+            row.id = `gallery-row-${i}`;
+            row.innerHTML = `
+                <td>${i + 1}</td>
+                <td title="${url}">${truncateMiddle(url, 40)}</td>
+                <td><span class="status-icon">⏳</span> Waiting</td>
+                <td><div class="batch-progress-bar"><div class="batch-progress-fill" style="width: 0%;"></div></div></td>
+            `;
+            tbody.appendChild(row);
+        });
+
+        applyGalleryControlState('running');
+        clearGalleryResultMessage();
+
+        const options = {
+            savePath: savePathInput.value,
+            threads: parseInt(threadsSelect.value),
+            browser: browserSelect.value,
+            ugoiraToWebm: ugoiraCheckbox.checked,
+            formats: Array.from(formatCheckboxes).filter(cb => cb.checked).map(cb => cb.closest('.custom-option').dataset.value),
+            archive: document.getElementById('galleryArchive')?.checked || false,
+            extraArgs: document.getElementById('galleryArgs')?.value || ''
+        };
+
+        try {
+            const result = await window.go.main.App.StartGalleryBatchDownload(urls, options);
+            if (typeof result === 'string' && result.startsWith('Error:')) {
+                throw new Error(result);
+            }
+        } catch (err) {
+            applyGalleryControlState('idle');
+            showGalleryError('Error: ' + (err?.message || err));
+        }
+    });
+
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', async () => {
+            cancelBtn.disabled = true;
+            try {
+                await window.go.main.App.CancelGalleryDownload();
+            } catch (err) {
+                cancelBtn.disabled = false;
+                showGalleryError('Error: ' + (err?.message || err));
+            }
+        });
+    }
+
+    setTimeout(initCustomSelects, 0);
+}
+
+function applyGalleryControlState(status) {
+    state.gallerySessionStatus = status;
+    const startBtn = document.getElementById('startGalleryBtn');
+    const cancelBtn = document.getElementById('cancelGalleryBtn');
+    const clearBtn = document.getElementById('clearGalleryBtn');
+    const urlsTextarea = document.getElementById('galleryUrls');
+    const browseBtn = document.getElementById('browseGalleryBtn');
+    const threadsSelect = document.getElementById('galleryThreadsSelect');
+    const browserSelect = document.getElementById('galleryBrowserSelect');
+    const ugoiraCheckbox = document.getElementById('galleryUgoiraToWebm');
+
+    if (!startBtn || !cancelBtn) return;
+
+    const isRunning = status === 'running';
+    
+    startBtn.disabled = isRunning;
+    startBtn.innerHTML = isRunning ? '🖼 Downloading...' : '🖼 Start Download Images';
+    cancelBtn.hidden = !isRunning;
+    cancelBtn.disabled = !isRunning;
+
+    if (clearBtn) clearBtn.disabled = isRunning;
+    if (urlsTextarea) urlsTextarea.disabled = isRunning;
+    if (browseBtn) browseBtn.disabled = isRunning;
+    if (threadsSelect) threadsSelect.disabled = isRunning;
+    if (browserSelect) browserSelect.disabled = isRunning;
+    if (ugoiraCheckbox) ugoiraCheckbox.disabled = isRunning;
+
+    refreshCustomSelectStates();
+}
+
+function showGalleryError(message) {
+    const el = document.getElementById('galleryResultMessage');
+    if (el) {
+        el.className = 'result-message error';
+        el.textContent = message;
+        el.style.display = 'block';
+    }
+}
+
+function clearGalleryResultMessage() {
+    const el = document.getElementById('galleryResultMessage');
+    if (el) {
+        el.textContent = '';
+        el.style.display = 'none';
+        el.className = 'result-message';
+    }
 }
 
 async function checkUpdates() {
@@ -235,6 +752,107 @@ function setupGoEvents() {
                 });
             });
             
+            window.runtime.EventsOn('gallery-progress', (data) => {
+                const row = document.getElementById(`gallery-row-${data.index}`);
+                if (row) {
+                    const statusCell = row.querySelector('td:nth-child(3)');
+                    if (statusCell) {
+                        statusCell.innerHTML = `
+                            <div class="status-with-tooltip" data-tooltip-html="${escapeHtml(data.speed)}">
+                                <span class="status-icon">⏳</span>
+                                <span>Downloading</span>
+                            </div>
+                        `;
+                    }
+                    const fill = row.querySelector('.batch-progress-fill');
+                    if (fill) {
+                        // If we have percentage in data, use it
+                        if (data.percentage > 0) {
+                            fill.style.width = data.percentage + '%';
+                        } else {
+                            fill.style.width = '50%'; // Intermediate progress
+                        }
+                    }
+                }
+            });
+
+            window.runtime.EventsOn('gallery-status', (data) => {
+                const row = document.getElementById(`gallery-row-${data.index}`);
+                if (row) {
+                    const statusCell = row.querySelector('td:nth-child(3)');
+                    if (statusCell) {
+                        const icons = { waiting: '⏳', downloading: '⏳', done: '✅', error: '❌', canceled: '✕' };
+                        const status = data.status || 'waiting';
+                        statusCell.innerHTML = `
+                            <div class="status-with-tooltip" data-tooltip-html="${escapeHtml(data.message || status)}">
+                                <span class="status-icon">${icons[status] || '?'}</span>
+                                <span>${status.charAt(0).toUpperCase() + status.slice(1)}</span>
+                            </div>
+                        `;
+                    }
+                    if (data.status === 'done') {
+                        const fill = row.querySelector('.batch-progress-fill');
+                        if (fill) {
+                            fill.style.width = '100%';
+                            fill.style.backgroundColor = '#34c759';
+                        }
+                    }
+                }
+            });
+
+            window.runtime.EventsOn('gallery-batch-complete', () => {
+                applyGalleryControlState('idle');
+            });
+
+            window.runtime.EventsOn('gallery-title', (data) => {
+                // data might be a string or object depending on how it's emitted
+                const title = typeof data === 'string' ? data : data.title;
+                const index = typeof data === 'object' ? data.index : 0;
+                const row = document.getElementById(`gallery-row-${index}`);
+                if (row) {
+                    const titleCell = row.querySelector('td:nth-child(2)');
+                    if (titleCell) {
+                        titleCell.innerText = truncateMiddle(title, 40);
+                        titleCell.title = title;
+                    }
+                }
+            });
+
+            window.runtime.EventsOn('gallery-complete', (data) => {
+                const row = document.getElementById(`gallery-row-${data.index}`);
+                if (row) {
+                    const statusCell = row.querySelector('td:nth-child(3)');
+                    if (statusCell) {
+                        statusCell.className = 'status-cell status-done';
+                        statusCell.innerHTML = `
+                            <div class="status-with-tooltip" data-tooltip-html="All images downloaded.">
+                                <span class="status-icon">✅</span>
+                                <span>Done</span>
+                            </div>
+                        `;
+                    }
+                    const fill = row.querySelector('.batch-progress-fill');
+                    if (fill) {
+                        fill.style.width = '100%';
+                        fill.style.backgroundColor = '#34c759';
+                    }
+                }
+                const btn = document.getElementById('startGalleryBtn');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '🖼 Start Download Images';
+                }
+            });
+
+            window.runtime.EventsOn('gallery-error', (err) => {
+                showError('Gallery Error: ' + err);
+                const btn = document.getElementById('startGalleryBtn');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '🖼 Start Download Images';
+                }
+            });
+
             window.runtime.EventsOn('binary-error', (error) => showError('⚠️ Missing Tool: ' + error));
             window.runtime.EventsOn('binary-warning', (warning) => showError('⚠️ Warning: ' + warning));
             window.runtime.EventsOn('upgrade-status', (status) => {
@@ -339,7 +957,7 @@ function applyBatchControlState(status) {
         pauseBtn.disabled = true;
         cancelBtn.disabled = false;
     } else {
-        startBtn.textContent = '▶ Start Download';
+        startBtn.textContent = '▶ Start Download Videos';
         startBtn.disabled = false;
         pauseBtn.textContent = '⏸ Pause';
         pauseBtn.disabled = false;
@@ -360,7 +978,6 @@ function applyBatchControlState(status) {
 
 function setupBatchTab() {
     const clearBtn = document.getElementById('clearBatchBtn');
-    const toggleCookieBtn = document.getElementById('toggleCookieBtn');
     const browseBtn = document.getElementById('browseBatchBtn');
     const startBtn = document.getElementById('startBatchBtn');
     const pauseBtn = document.getElementById('pauseBatchBtn');
@@ -374,7 +991,6 @@ function setupBatchTab() {
     const cookieInline = document.getElementById('cookieInline');
     const cookieInput = document.getElementById('cookieInput');
     const confirmCookieBtn = document.getElementById('confirmCookieBtn');
-    const cookieAddedBadge = document.getElementById('cookieAddedBadge');
 
     if (!clearBtn || !startBtn || !pauseBtn || !cancelBtn) return;
 
@@ -396,18 +1012,7 @@ function setupBatchTab() {
         state.downloadedFiles = {};
     });
 
-    if (toggleCookieBtn && cookieInline && cookieInput && confirmCookieBtn) {
-        toggleCookieBtn.addEventListener('click', () => {
-            const willShow = cookieInline.hidden;
-            cookieInline.hidden = !willShow;
-            if (!cookieInline.hidden) {
-                state.cookieHasError = false;
-                if (cookieAddedBadge) cookieAddedBadge.hidden = true;
-                cookieInput.value = state.temporaryCookieDraft || state.maskedCookieValue || '';
-                setTimeout(() => cookieInput.focus(), 0);
-            }
-        });
-
+    if (cookieInline && cookieInput && confirmCookieBtn) {
         cookieInput.addEventListener('paste', (event) => {
             const pasted = event.clipboardData?.getData('text') || '';
             if (!pasted) return;
@@ -420,67 +1025,31 @@ function setupBatchTab() {
             state.temporaryCookieDraft = event.target.value;
         });
 
-        cookieInput.addEventListener('blur', () => {
-            if (state.isSubmittingCookie) return;
-            setTimeout(() => {
-                const active = document.activeElement;
-                if (active === cookieInput || active === confirmCookieBtn || active === toggleCookieBtn) {
-                    return;
-                }
-                closeCookieEditor();
-            }, 0);
-        });
-
-        confirmCookieBtn.addEventListener('mousedown', () => {
-            state.isSubmittingCookie = true;
-        });
-
         confirmCookieBtn.addEventListener('click', async () => {
             const rawCookie = state.temporaryCookieDraft.trim();
             if (!rawCookie) {
-                state.isSubmittingCookie = false;
                 if (!state.maskedCookieValue) {
-                    state.cookieHasError = true;
                     showError('Cookie error: please paste a YouTube Cookie header first');
                 } else {
-                    closeCookieEditor();
+                    cookieInline.hidden = true;
                 }
                 return;
             }
 
             try {
                 await window.go.main.App.SetTemporaryYouTubeCookie(rawCookie);
-                state.temporaryCookieRaw = rawCookie;
-                state.temporaryCookieDraft = '';
+                state.cookieConfig.mode = 'manual';
                 state.maskedCookieValue = maskCookieValue(rawCookie);
-                state.cookieHasError = false;
+                state.temporaryCookieDraft = '';
                 cookieInline.hidden = true;
                 cookieInput.value = '';
                 clearResultMessage();
-                if (cookieAddedBadge) cookieAddedBadge.hidden = false;
-                updateCookieButtonState();
+                refreshCookieUI();
             } catch (err) {
-                state.cookieHasError = true;
                 showError('Cookie error: ' + (err?.message || err));
-            } finally {
-                state.isSubmittingCookie = false;
             }
-        });
-
-        document.addEventListener('click', (event) => {
-            if (cookieInline.hidden) return;
-            if (state.isSubmittingCookie) return;
-
-            const target = event.target;
-            if (target.closest('#cookieInline') || target.closest('#toggleCookieBtn')) {
-                return;
-            }
-
-            closeCookieEditor();
         });
     }
-
-    updateCookieButtonState();
 
     browseBtn.addEventListener('click', async () => {
         if (!state.wailsReady) return;
@@ -1033,24 +1602,6 @@ function positionGlobalStatusTooltip(event, tooltip) {
 
     tooltip.style.left = `${left}px`;
     tooltip.style.top = `${top}px`;
-}
-
-function updateCookieButtonState() {
-    const toggleCookieBtn = document.getElementById('toggleCookieBtn');
-    const cookieAddedBadge = document.getElementById('cookieAddedBadge');
-    if (!toggleCookieBtn) return;
-    toggleCookieBtn.textContent = state.maskedCookieValue ? 'Cookie added' : 'Add Cookie ytb';
-    if (cookieAddedBadge) cookieAddedBadge.hidden = !state.maskedCookieValue;
-}
-
-function closeCookieEditor() {
-    const cookieInline = document.getElementById('cookieInline');
-    const cookieInput = document.getElementById('cookieInput');
-    if (cookieInline) cookieInline.hidden = true;
-    if (cookieInput) cookieInput.value = '';
-    state.temporaryCookieDraft = '';
-    state.cookieHasError = false;
-    clearResultMessage();
 }
 
 function maskCookieValue(raw) {
