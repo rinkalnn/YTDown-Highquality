@@ -479,6 +479,8 @@ function setupGalleryTab() {
     const formatsTrigger = document.getElementById('galleryFormatsTrigger');
     const allCheckbox = document.getElementById('fmt-all');
 
+    let formatCheckboxes = [];
+
     if (mediaListContainer && formatsTrigger) {
         mediaListContainer.innerHTML = ''; // Clear
         
@@ -654,7 +656,7 @@ function setupGalleryTab() {
             row.id = `gallery-row-${i}`;
             row.innerHTML = `
                 <td>${i + 1}</td>
-                <td title="${url}">${truncateMiddle(url, 40)}</td>
+                <td title="${escapeHtml(url)}">${escapeHtml(truncateMiddle(url, 40))}</td>
                 <td><span class="status-icon">⏳</span> Waiting</td>
                 <td><div class="batch-progress-bar"><div class="batch-progress-fill" style="width: 0%;"></div></div></td>
             `;
@@ -912,7 +914,7 @@ function setupGoEvents() {
                         const fill = row.querySelector('.batch-progress-fill');
                         if (fill) {
                             fill.style.width = '100%';
-                            fill.style.backgroundColor = '#34c759';
+                            fill.style.backgroundColor = 'var(--accent-green, #34c759)';
                         }
                     }
                 }
@@ -952,7 +954,7 @@ function setupGoEvents() {
                     const fill = row.querySelector('.batch-progress-fill');
                     if (fill) {
                         fill.style.width = '100%';
-                        fill.style.backgroundColor = '#34c759';
+                        fill.style.backgroundColor = 'var(--accent-green, #34c759)';
                     }
                 }
                 const btn = document.getElementById('startGalleryBtn');
@@ -1493,8 +1495,8 @@ function updateCompressProgress(index, status, message) {
             if (fill) fill.style.width = '50%';
             if (statusCell) statusCell.textContent = 'Processing...';
         } else if (status === 'done') {
-            if (fill) { fill.style.width = '100%'; fill.style.backgroundColor = '#34c759'; }
-            if (statusCell) { statusCell.textContent = '✅ Done'; statusCell.style.color = '#34c759'; }
+            if (fill) { fill.style.width = '100%'; fill.style.backgroundColor = 'var(--accent-green, #34c759)'; }
+            if (statusCell) { statusCell.textContent = '✅ Done'; statusCell.style.color = 'var(--accent-green, #34c759)'; }
         }
     }
 }
