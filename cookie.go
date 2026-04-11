@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
 
 // CookieMode defines how cookies are handled
@@ -28,9 +30,11 @@ type CookieConfig struct {
 }
 
 type temporaryCookieState struct {
-	mu       sync.RWMutex
-	header   string
-	tempFile string
+	mu            sync.RWMutex
+	header        string
+	tempFile      string
+	xhsSession    string    // Cache for Xiaohongshu session
+	xhsCacheTime  time.Time // When the cache was last updated
 }
 
 type parsedCookie struct {
@@ -71,14 +75,28 @@ func (m *CookieManager) GetUA() string {
 	browser := m.config.SelectedBrowser
 	m.mu.RUnlock()
 
-	osVersion := getMacOSVersion()
-	osVersionUA := strings.ReplaceAll(osVersion, ".", "_")
-
 	if browser == "" {
 		// Default to Safari (pre-installed on every Mac) if none selected
 		browser = "safari"
 	}
 
+	// Try to get the actual User-Agent that yt-dlp would use for this browser
+	ytdlp := getResourcePath("yt-dlp")
+	if ytdlp != "" {
+		// We ask for the user_agent it would use with this browser
+		cmd := exec.Command(ytdlp, "--cookies-from-browser", browser, "--print", "user_agent", "--terminate-on-connect", "https://www.google.com")
+		out, err := cmd.Output()
+		if err == nil && len(out) > 0 {
+			ua := strings.TrimSpace(string(out))
+			if ua != "" {
+				return ua
+			}
+		}
+	}
+
+	// Fallback to manual construction if yt-dlp fails or is not available
+	osVersion := getMacOSVersion()
+	osVersionUA := strings.ReplaceAll(osVersion, ".", "_")
 	version := getBrowserVersionDynamic(browser)
 	if version == "" {
 		version = "17.0" // Generic fallback
@@ -207,15 +225,39 @@ func (m *CookieManager) SaveConfig() {
 }
 
 // GetCookieArgs returns the command line arguments for cookies
-func (m *CookieManager) GetCookieArgs(tool string) []string {
+func (m *CookieManager) GetCookieArgs(ctx context.Context, tool string, url string) []string {
 	m.mu.RLock()
 	cfg := m.config
 	m.mu.RUnlock()
 
+	var args []string
+	isXHS := IsXiaohongshu(url)
+
 	switch cfg.Mode {
 	case CookieModeBrowser:
 		if cfg.SelectedBrowser != "" {
-			return []string{"--cookies-from-browser", cfg.SelectedBrowser}
+			// Special handling for Xiaohongshu: extract web_session and add as header
+			if isXHS && tool == "yt-dlp" {
+				fmt.Printf("[Cookie] 🔍 Detecting Xiaohongshu, trying to extract web_session from %s...\n", cfg.SelectedBrowser)
+				session := m.extractWebSessionFromBrowser(ctx, cfg.SelectedBrowser, url)
+				if session != "" {
+					// Use --add-headers (plural) as in the user's successful command
+					args = append(args, "--add-headers", "Cookie:web_session="+session)
+					LogInfo("[Cookie] Successfully extracted web_session from %s: %s", cfg.SelectedBrowser, session)
+					fmt.Printf("[Cookie] ✅ Found web_session: %s\n", session)
+					
+					// Re-enable browser cookies so yt-dlp can get the rest of the context
+					args = append(args, "--cookies-from-browser", cfg.SelectedBrowser)
+				} else {
+					LogWarning("[Cookie] Could NOT find web_session in %s cookies. Make sure you are logged in to Xiaohongshu.", cfg.SelectedBrowser)
+					fmt.Printf("[Cookie] ❌ Failed to find web_session in %s. Please check login status.\n", cfg.SelectedBrowser)
+					// Fallback to regular browser cookies if extraction failed
+					args = append(args, "--cookies-from-browser", cfg.SelectedBrowser)
+				}
+			} else {
+				// Regular browser cookie handling for other sites
+				args = append(args, "--cookies-from-browser", cfg.SelectedBrowser)
+			}
 		}
 	case CookieModeManual:
 		m.state.mu.RLock()
@@ -229,11 +271,125 @@ func (m *CookieManager) GetCookieArgs(tool string) []string {
 			}
 			// For yt-dlp, use the temp file if available
 			if tempFile != "" {
-				return []string{"--cookies", tempFile}
+				args = append(args, "--cookies", tempFile)
+			}
+			
+			// For Xiaohongshu in manual mode, if web_session is in the header, 
+			// it's already there, but we might want to ensure it's in --add-header 
+			// if yt-dlp's --cookies flag doesn't handle it well for XHS.
+			if isXHS && tool == "yt-dlp" && !strings.Contains(header, "web_session=") {
+				// If not in manual header, we can't do much unless we also try browser
+				LogWarning("[Cookie] Xiaohongshu detected but web_session missing from manual cookie")
 			}
 		}
 	}
-	return nil
+	return args
+}
+
+var xhsDomains = []string{
+	"xiaohongshu.com",
+	"xhslink.com",
+	"redbookchina.com",
+}
+
+// IsXiaohongshu checks if the URL belongs to Xiaohongshu
+func IsXiaohongshu(url string) bool {
+	lower := strings.ToLower(url)
+	for _, domain := range xhsDomains {
+		if strings.Contains(lower, domain) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractWebSessionFromBrowser uses yt-dlp to extract the web_session cookie from a browser
+func (m *CookieManager) extractWebSessionFromBrowser(ctx context.Context, browser string, url string) string {
+	// 1. Check Cache first (Valid for 5 minutes)
+	m.state.mu.RLock()
+	if m.state.xhsSession != "" && time.Since(m.state.xhsCacheTime) < 5*time.Minute {
+		session := m.state.xhsSession
+		m.state.mu.RUnlock()
+		fmt.Printf("[Cookie] ⚡ Using CACHED web_session: %s\n", session)
+		return session
+	}
+	m.state.mu.RUnlock()
+
+	ytdlp := getResourcePath("yt-dlp")
+	if ytdlp == "" {
+		return ""
+	}
+
+	// Resolve URL first
+	resolvedURL := ResolveShortURL(url, m.GetUA())
+
+	// Use the base domain for cookie extraction for Xiaohongshu
+	extractionURL := resolvedURL
+	if IsXiaohongshu(resolvedURL) {
+		extractionURL = "https://www.xiaohongshu.com/"
+	}
+
+	// Create a temporary file to store cookies
+	tempDir, err := os.MkdirTemp("", "ytdown-xhs-*")
+	if err != nil {
+		return ""
+	}
+	defer os.RemoveAll(tempDir)
+	tempCookieFile := filepath.Join(tempDir, "cookies.txt")
+
+	checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	fmt.Printf("[Cookie] 🛠️  Exporting cookies from %s to temporary file...\n", browser)
+	// Using --cookies to export to a file instead of --print-cookies
+	cmd := exec.CommandContext(checkCtx, ytdlp, "--cookies-from-browser", browser, "--cookies", tempCookieFile, "--no-warnings", "--no-playlist", extractionURL)
+	_, err = cmd.CombinedOutput()
+	
+	if err != nil {
+		fmt.Printf("[Cookie] ℹ️  yt-dlp export status: %v\n", err)
+	}
+
+	// Read the temporary cookie file
+	data, err := os.ReadFile(tempCookieFile)
+	if err != nil {
+		fmt.Printf("[Cookie] ❌ Could not read temporary cookie file: %v\n", err)
+		return ""
+	}
+
+	outputStr := string(data)
+	var session string
+
+	// Parse Netscape cookie format in the file
+	lines := strings.Split(outputStr, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "web_session") {
+			parts := strings.Fields(line)
+			// Netscape format: domain, flag, path, secure, expiration, name, value
+			if len(parts) >= 7 && (parts[5] == "web_session" || strings.Contains(parts[5], "web_session")) {
+				session = parts[6]
+				break
+			}
+		}
+	}
+
+	// Fallback regex search in the file content
+	if session == "" {
+		re := regexp.MustCompile(`web_session\s+([a-zA-Z0-9]+)`)
+		matches := re.FindStringSubmatch(outputStr)
+		if len(matches) > 1 {
+			session = matches[1]
+		}
+	}
+
+	// 2. Update Cache if found
+	if session != "" {
+		m.state.mu.Lock()
+		m.state.xhsSession = session
+		m.state.xhsCacheTime = time.Now()
+		m.state.mu.Unlock()
+	}
+
+	return session
 }
 
 // Compatibility functions for existing code

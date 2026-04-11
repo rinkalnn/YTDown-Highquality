@@ -4,11 +4,9 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"net/http"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -17,42 +15,6 @@ import (
 type GalleryInfo struct {
 	URL   string `json:"url"`
 	Title string `json:"title"`
-}
-
-// resolveShortURL follows redirects to find the final URL for short links
-func resolveShortURL(url string) string {
-	// Only resolve links that are known to be shorteners
-	if !strings.Contains(url, "xhslink.com") && !strings.Contains(url, "vt.tiktok.com") {
-		return url
-	}
-
-	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return fmt.Errorf("too many redirects")
-			}
-			return nil
-		},
-		Timeout: 10 * time.Second,
-	}
-
-	// Try HEAD first, then GET
-	resp, err := client.Head(url)
-	if err != nil {
-		resp, err = client.Get(url)
-		if err != nil {
-			return url
-		}
-	}
-	defer resp.Body.Close()
-
-	if resp.Request != nil && resp.Request.URL != nil {
-		finalURL := resp.Request.URL.String()
-		LogInfo("[GDL] Resolved %s to %s", url, finalURL)
-		return finalURL
-	}
-
-	return url
 }
 
 // DownloadGalleryWithOpts downloads images using gallery-dl with custom options
@@ -64,7 +26,7 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	}
 
 	// Resolve short URLs before passing to gallery-dl
-	resolvedURL := resolveShortURL(url)
+	resolvedURL := ResolveShortURL(url, manager.GetUA())
 
 	args := []string{
 		"--directory", options.SavePath,
@@ -91,7 +53,7 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 
 	if useCookies {
 		// Add cookie arguments from the unified manager
-		if cookieArgs := manager.GetCookieArgs("gallery-dl"); len(cookieArgs) > 0 {
+		if cookieArgs := manager.GetCookieArgs(ctx, "gallery-dl", resolvedURL); len(cookieArgs) > 0 {
 			args = append(args, cookieArgs...)
 		} else if options.Browser != "" {
 			// Fallback to legacy option only if global cookie is not set

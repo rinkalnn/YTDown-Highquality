@@ -27,6 +27,60 @@ type VideoInfo struct {
 	ID        string `json:"id"`
 }
 
+// ResolveShortURL follows redirects to find the final URL for short links
+func ResolveShortURL(url string, userAgent string) string {
+	// Only resolve links that are known to be shorteners
+	if !strings.Contains(url, "xhslink.com") && !strings.Contains(url, "vt.tiktok.com") && !strings.Contains(url, "v.douyin.com") {
+		return url
+	}
+
+	fmt.Printf("[URL] 🔍 Resolving short URL: %s using UA: %s\n", url, userAgent)
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// Stop if we are being redirected to a login page
+			if strings.Contains(req.URL.Path, "/login") || strings.Contains(req.URL.Host, "login") {
+				return http.ErrUseLastResponse
+			}
+			if len(via) >= 10 {
+				return fmt.Errorf("too many redirects")
+			}
+			return nil
+		},
+		Timeout: 10 * time.Second,
+	}
+
+	// Use the provided browser User-Agent
+	ua := userAgent
+	if ua == "" {
+		ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+	}
+
+	// Try GET instead of HEAD because some shorteners (like XHS) behave differently with HEAD
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("User-Agent", ua)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("[URL] ❌ Resolution failed: %v\n", err)
+		return url
+	}
+	defer resp.Body.Close()
+
+	if resp.Request != nil && resp.Request.URL != nil {
+		finalURL := resp.Request.URL.String()
+		if finalURL != url {
+			fmt.Printf("[URL] ✅ Resolved to: %s (Status: %d)\n", finalURL, resp.StatusCode)
+			LogInfo("[URL] Resolved %s to %s", url, finalURL)
+			return finalURL
+		}
+	}
+
+	fmt.Printf("[URL] ⚠️  No redirect found for %s\n", url)
+	return url
+}
+
 // DownloadVideo downloads a video using yt-dlp
 func DownloadVideo(ctx context.Context, index int, url, format, quality, savePath string) error {
 	ytdlpPath := getResourcePath("yt-dlp")
@@ -72,7 +126,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 	}
 
 	// Build yt-dlp arguments based on format and quality
-	args := buildDownloadArgs(format, quality, savePath, ffmpegPath)
+	args := buildDownloadArgs(ctx, url, format, quality, savePath, ffmpegPath)
 	args = append(args, url)
 	// Add verbose for better debugging in app.log
 	// args = append(args, "--verbose")
@@ -220,7 +274,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 }
 
 // buildDownloadArgs builds yt-dlp command arguments
-func buildDownloadArgs(format, quality, savePath, ffmpegPath string) []string {
+func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmpegPath string) []string {
 	args := []string{}
 
 	switch format {
@@ -249,9 +303,16 @@ func buildDownloadArgs(format, quality, savePath, ffmpegPath string) []string {
 		"--no-playlist",
 		"--no-continue",
 		"--force-overwrites",
-		"-o", filepath.Join(savePath, "%(title)s.%(ext)s"),
-		"--referer", "https://www.youtube.com/",
+		"--windows-filenames",
+		"-o", filepath.Join(savePath, "%(title)s [%(id)s].%(ext)s"),
 	)
+
+	// Set appropriate referer
+	if IsXiaohongshu(url) {
+		args = append(args, "--referer", "https://www.xiaohongshu.com/")
+	} else {
+		args = append(args, "--referer", "https://www.youtube.com/")
+	}
 
 	if ffmpegPath != "" {
 		args = append(args, "--ffmpeg-location", ffmpegPath)
@@ -270,7 +331,7 @@ func buildDownloadArgs(format, quality, savePath, ffmpegPath string) []string {
 	}
 	args = append(args, "--user-agent", userAgent)
 
-	if cookieArgs := manager.GetCookieArgs("yt-dlp"); len(cookieArgs) > 0 {
+	if cookieArgs := manager.GetCookieArgs(ctx, "yt-dlp", url); len(cookieArgs) > 0 {
 		args = append(args, cookieArgs...)
 	}
 
@@ -348,36 +409,54 @@ func GetVideoMetadata(ctx context.Context, url string) (*VideoInfo, error) {
 		return nil, fmt.Errorf("yt-dlp not found")
 	}
 
-	// Get title, thumbnail URL, and ID from yt-dlp
-	args := []string{"--get-title", "--get-thumbnail", "--get-id", "--no-warnings", "--no-playlist"}
-	if cookieArgs := manager.GetCookieArgs("yt-dlp"); len(cookieArgs) > 0 {
+	// Use -J for JSON output which is much more reliable than line-based output
+	args := []string{"-J", "--no-warnings", "--no-playlist"}
+	
+	// Add referer for Xiaohongshu
+	if IsXiaohongshu(url) {
+		args = append(args, "--referer", "https://www.xiaohongshu.com/")
+	}
+
+	if cookieArgs := manager.GetCookieArgs(ctx, "yt-dlp", url); len(cookieArgs) > 0 {
 		args = append(args, cookieArgs...)
 	}
 	args = append(args, url)
 
+	LogDebug("[Metadata] Fetching JSON metadata for %s", url)
 	cmd := exec.CommandContext(ctx, ytdlpPath, args...)
 
-	// Capture both stdout and stderr
-	output, err := cmd.CombinedOutput()
-	outputStr := strings.TrimSpace(string(output))
-
+	// Capture only stdout for the JSON data
+	output, err := cmd.Output()
 	if err != nil {
-		LogError("[Metadata] yt-dlp failed: %v, output: %s", err, outputStr)
+		// If fails, try to get error message from CombinedOutput for debugging
+		combined, _ := exec.CommandContext(ctx, ytdlpPath, args...).CombinedOutput()
+		LogError("[Metadata] yt-dlp failed: %v, output: %s", err, string(combined))
 		return nil, err
 	}
 
-	lines := strings.Split(outputStr, "\n")
-
-	if len(lines) < 3 {
-		return nil, fmt.Errorf("could not extract title, thumbnail or ID")
+	var data map[string]interface{}
+	if err := json.Unmarshal(output, &data); err != nil {
+		LogError("[Metadata] JSON unmarshal failed: %v", err)
+		return nil, err
 	}
 
-	title := strings.TrimSpace(lines[0])
-	videoID := strings.TrimSpace(lines[1])
-	thumbnailURL := strings.TrimSpace(lines[2])
+	title, _ := data["title"].(string)
+	videoID, _ := data["id"].(string)
+	thumbnailURL, _ := data["thumbnail"].(string)
 
-	// Download thumbnail and convert to base64 data URL
-	dataURL := downloadThumbnailAsBase64(thumbnailURL)
+	// Some extractors use "thumbnails" array instead of a single "thumbnail" field
+	if thumbnailURL == "" {
+		if thumbnails, ok := data["thumbnails"].([]interface{}); ok && len(thumbnails) > 0 {
+			if lastThumb, ok := thumbnails[len(thumbnails)-1].(map[string]interface{}); ok {
+				thumbnailURL, _ = lastThumb["url"].(string)
+			}
+		}
+	}
+
+	LogInfo("[Metadata] ✅ Found metadata: Title=%s, ID=%s, Thumbnail=%s", title, videoID, thumbnailURL)
+
+	// Download thumbnail with proper headers/cookies
+	dataURL := downloadThumbnailAsBase64(ctx, thumbnailURL, url)
 
 	return &VideoInfo{
 		Title:     title,
@@ -387,42 +466,87 @@ func GetVideoMetadata(ctx context.Context, url string) (*VideoInfo, error) {
 }
 
 // downloadThumbnailAsBase64 downloads thumbnail and returns as base64 data URL
-func downloadThumbnailAsBase64(thumbnailURL string) string {
+func downloadThumbnailAsBase64(ctx context.Context, thumbnailURL string, url string) string {
 	if thumbnailURL == "" {
 		return ""
 	}
 
+	// Determine if it's Xiaohongshu to apply specific headers
+	isXHS := IsXiaohongshu(url)
+
+	// Get settings from manager
+	ua := manager.GetUA()
+	if ua == "" {
+		ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+	}
+
 	// Download thumbnail with timeout
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(thumbnailURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", thumbnailURL, nil)
 	if err != nil {
+		return ""
+	}
+
+	// Set Headers
+	req.Header.Set("User-Agent", ua)
+	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9,vi;q=0.8")
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Pragma", "no-cache")
+	req.Header.Set("Sec-Fetch-Dest", "image")
+	req.Header.Set("Sec-Fetch-Mode", "no-cors")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+
+	if isXHS {
+		req.Header.Set("Referer", "https://www.xiaohongshu.com/")
+		// Get web_session from cache if available
+		manager.state.mu.RLock()
+		xhsSession := manager.state.xhsSession
+		manager.state.mu.RUnlock()
+		
+		if xhsSession != "" {
+			req.Header.Set("Cookie", "web_session="+xhsSession)
+		}
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		LogError("[Thumbnail] ❌ Connection error: %v", err)
 		return ""
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		LogError("[Thumbnail] ❌ Failed to download thumbnail: %d %s", resp.StatusCode, thumbnailURL)
 		return ""
 	}
 
 	// Read thumbnail bytes
 	thumbnailData, err := io.ReadAll(resp.Body)
 	if err != nil {
+		LogError("[Thumbnail] ❌ Read error: %v", err)
 		return ""
 	}
 
-	// Determine MIME type from URL
+	if len(thumbnailData) < 100 {
+		LogError("[Thumbnail] ❌ Thumbnail data too small: %d bytes", len(thumbnailData))
+		return ""
+	}
+
+	// Determine MIME type
 	mimeType := "image/jpeg"
-	if strings.Contains(strings.ToLower(thumbnailURL), ".png") {
+	lowerURL := strings.ToLower(thumbnailURL)
+	if strings.Contains(lowerURL, ".png") {
 		mimeType = "image/png"
-	} else if strings.Contains(strings.ToLower(thumbnailURL), ".webp") {
+	} else if strings.Contains(lowerURL, ".webp") {
 		mimeType = "image/webp"
+	} else if strings.Contains(lowerURL, ".avif") {
+		mimeType = "image/avif"
 	}
 
 	// Convert to base64 data URL
-	encoded := encodeBase64(thumbnailData)
-	dataURL := fmt.Sprintf("data:%s;base64,%s", mimeType, encoded)
-
-	return dataURL
+	encoded := base64.StdEncoding.EncodeToString(thumbnailData)
+	return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded)
 }
 
 // encodeBase64 encodes bytes to base64 string
@@ -431,19 +555,19 @@ func encodeBase64(data []byte) string {
 }
 
 // GetPlaylistVideos extracts all videos from a playlist
-func GetPlaylistVideos(url string) ([]string, error) {
+func GetPlaylistVideos(ctx context.Context, url string) ([]string, error) {
 	ytdlpPath := getResourcePath("yt-dlp")
 	if ytdlpPath == "" {
 		return nil, fmt.Errorf("yt-dlp not found")
 	}
 
 	args := []string{"--flat-playlist", "-J"}
-	if cookieArgs := manager.GetCookieArgs("yt-dlp"); len(cookieArgs) > 0 {
+	if cookieArgs := manager.GetCookieArgs(ctx, "yt-dlp", url); len(cookieArgs) > 0 {
 		args = append(args, cookieArgs...)
 	}
 	args = append(args, url)
 
-	cmd := exec.Command(ytdlpPath, args...)
+	cmd := exec.CommandContext(ctx, ytdlpPath, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err

@@ -851,7 +851,7 @@ func (a *App) CheckPlaylist(url string) map[string]interface{} {
 	}
 
 	// Extract playlist videos
-	videos, err := GetPlaylistVideos(url)
+	videos, err := GetPlaylistVideos(a.ctx, url)
 	if err == nil && len(videos) > 0 {
 		result["isPlaylist"] = true
 		result["videoCount"] = len(videos)
