@@ -342,28 +342,34 @@ func (a *App) startup(ctx context.Context) {
 	a.loadConfig()
 	manager.LoadConfig()
 
-	// Check binaries after a short delay
+	// Check dependencies on startup
 	go func() {
 		time.Sleep(1 * time.Second)
-		status := a.CheckBinaries()
-		if !status["ytdlp"].(bool) || !status["ffmpeg"].(bool) || !status["gallerydl"].(bool) {
-			// Emit event to frontend - the frontend should show a setup button/modal
-			runtime.EventsEmit(ctx, "binary-warning", "One or more dependencies are missing.")
+		check := a.CheckDependencies()
+		if !check.AllInstalled {
+			// Emit warning event to frontend with missing tools
+			runtime.EventsEmit(ctx, "dependencies-missing", check)
 		}
 	}()
 }
 
-// CheckBinaries checks if yt-dlp, ffmpeg and gallery-dl are installed
+// CheckBinaries checks if yt-dlp, ffmpeg and gallery-dl are installed (legacy support)
 func (a *App) CheckBinaries() map[string]interface{} {
-	ytdlpPath := getResourcePath("yt-dlp")
-	ffmpegPath := getResourcePath("ffmpeg")
-	gallerydlPath := getResourcePath("gallery-dl")
+	check := a.CheckDependencies()
+	toolMap := make(map[string]interface{})
 
-	return map[string]interface{}{
-		"ytdlp":     ytdlpPath != "",
-		"ffmpeg":    ffmpegPath != "",
-		"gallerydl": gallerydlPath != "",
+	for _, dep := range check.Dependencies {
+		switch dep.Name {
+		case "yt-dlp":
+			toolMap["ytdlp"] = dep.Installed
+		case "ffmpeg":
+			toolMap["ffmpeg"] = dep.Installed
+		case "gallery-dl":
+			toolMap["gallerydl"] = dep.Installed
+		}
 	}
+
+	return toolMap
 }
 
 // shutdown is called at application termination

@@ -822,6 +822,35 @@ function setupWindowAutoHug() {
 function setupGoEvents() {
     try {
         if (window.runtime && window.runtime.EventsOn) {
+            // Handle missing dependencies
+            window.runtime.EventsOn('dependencies-missing', async (data) => {
+                console.log('[DEPS] Missing dependencies detected:', data);
+                
+                if (!data.allInstalled && data.missingTools && data.missingTools.length > 0) {
+                    const missingList = data.missingTools.join(', ');
+                    const shouldInstall = confirm(
+                        `⚠️ Missing Dependencies\n\nYTDown requires the following tools:\n• ${data.missingTools.join('\n• ')}\n\nWould you like to install them now via Homebrew?`
+                    );
+                    
+                    if (shouldInstall) {
+                        try {
+                            // Call backend to install dependencies
+                            const result = await window.go.main.App.PromptToInstallDependencies();
+                            if (result) {
+                                alert('✅ Dependencies installed successfully!\nPlease restart the app.');
+                            } else {
+                                alert('❌ Failed to install dependencies.\nPlease install them manually via:\nbrew install ' + data.missingTools.join(' '));
+                            }
+                        } catch (err) {
+                            console.error('[DEPS] Installation error:', err);
+                            alert('Error during installation: ' + err);
+                        }
+                    } else {
+                        alert('You can install dependencies later using:\nbrew install ' + data.missingTools.join(' '));
+                    }
+                }
+            });
+            
             window.runtime.EventsOn('progress-update', updateProgress);
             
             window.runtime.EventsOn('video-info', (data) => {

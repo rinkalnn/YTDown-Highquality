@@ -10,7 +10,28 @@ YTDown là ứng dụng Desktop mạnh mẽ, đơn giản dành cho macOS, giúp
 
 [![Download YTDown](https://img.shields.io/badge/Tải_về_cho-macOS_.dmg-0a84ff?style=for-the-badge&logo=apple)](https://github.com/JustinNguyen9979/YTDown/releases)
 
-> **Lưu ý:** Sau khi tải về, nếu macOS báo "App is damaged" hoặc "Unidentified Developer", hãy nhấn chuột phải vào ứng dụng và chọn **Open**.
+### 🍺 Cài đặt qua Homebrew (Recommended)
+
+```bash
+brew tap JustinNguyen9979/ytdown
+brew install --cask ytdown
+```
+
+Để update:
+```bash
+brew upgrade --cask ytdown
+```
+
+### 📦 Hoặc tải DMG trực tiếp
+
+> **Lưu ý quan trọng:**
+> - Khi mở lần đầu, app sẽ **tự động kiểm tra** các dependencies (ffmpeg, yt-dlp, gallery-dl)
+> - Nếu thiếu, app sẽ **yêu cầu cài đặt qua Homebrew** (cần Homebrew được cài sẵn)
+> - Sau khi cài đặt, app sẽ **tự động khởi động lại**
+>
+> Nếu macOS báo "App is damaged" hoặc "Unidentified Developer", hãy nhấn chuột phải vào ứng dụng và chọn **Open**.
+
+**Yêu cầu:** Homebrew phải được cài sẵn (xem hướng dẫn dưới)
 
 ---
 
@@ -49,11 +70,18 @@ Chạy lệnh này để khởi động lại zsh.
 source ~/.zprofile
 ```
 
-### 3. Cài đặt các công cụ hỗ trợ
+### 3. Cài đặt các công cụ hỗ trợ (Cho Development)
 Sau khi cài xong Homebrew, hãy dán lệnh này để cài đặt các thành phần cần thiết:
 ```bash
-brew install yt-dlp ffmpeg gallery-dl go
+# Công cụ phát triển (bắt buộc)
+brew install go node
+
+# Dependencies cho YTDown (application sẽ tự động cài khi chạy)
+# Nếu bạn muốn cài trước để test local:
+brew install ffmpeg yt-dlp gallery-dl
 ```
+
+**Lưu ý:** Khi chạy app (dev hoặc production), app sẽ **tự động kiểm tra** và **yêu cầu cài** các dependencies nếu thiếu.
 
 ### 4. Cài đặt Wails CLI
 Đây là công cụ để build ứng dụng này từ mã nguồn Go:

@@ -36,8 +36,8 @@ wails build -platform darwin -tags universal \
     -o "$APP_NAME" \
     -nsis=false
 
-echo "📦 Bundling ffmpeg..."
-bash scripts/bundle-binaries.sh "$APP_BUNDLE"
+echo "⚠️  Note: Dependencies (ffmpeg, yt-dlp, gallery-dl) should be installed via Homebrew"
+echo "   Users will be prompted to install them on first launch."
 
 echo "🔏 Re-signing app bundle..."
 codesign --force --deep --sign - "$APP_BUNDLE"
