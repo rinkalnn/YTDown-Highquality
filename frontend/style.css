@@ -100,6 +100,136 @@ body {
     cursor: not-allowed;
 }
 
+.update-banner--multi {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+/* Danh sách các update items */
+.update-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+
+/* Mỗi dòng update */
+.update-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+/* YTDown app item — nổi bật hơn binary items */
+.update-item--app {
+    padding: 10px 14px;
+    background: rgba(10, 132, 255, 0.08);
+    border: 1px solid rgba(10, 132, 255, 0.25);
+    border-radius: 8px;
+}
+
+/* Text thông báo */
+.update-msg {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.4;
+}
+
+/* "(current: vX.X)" mờ nhỏ */
+.version-hint {
+    opacity: 0.6;
+    font-size: 11px;
+    font-weight: 400;
+}
+
+/* Cụm nút hành động */
+.update-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+}
+
+/* Nút outline (Copy brew) */
+.upgrade-btn--secondary {
+    background: transparent;
+    border: 1px solid var(--accent-blue);
+    color: var(--accent-blue);
+}
+
+.upgrade-btn--secondary:hover {
+    background: rgba(10, 132, 255, 0.12);
+    transform: scale(1.03);
+}
+
+/* Nút ghost text (Release Notes) */
+.upgrade-btn--ghost {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+}
+
+.upgrade-btn--ghost:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.08);
+    transform: none;
+}
+
+/* Nút ✕ đóng banner */
+.banner-close-btn {
+    padding: 4px 7px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 5px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    flex-shrink: 0;
+    line-height: 1;
+    transition: all 0.2s ease;
+    align-self: flex-start;
+    margin-top: 2px;
+}
+
+.banner-close-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Inline brew command */
+.brew-cmd {
+    display: inline-block;
+    font-family: 'SF Mono', 'Fira Mono', 'Menlo', monospace;
+    font-size: 11px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    padding: 2px 6px;
+    color: #7ee787;
+    margin: 0 4px;
+    user-select: all;
+}
+
+/* Text thành công màu xanh */
+.update-msg--success {
+    color: #3fb950;
+}
+
 /* Tabs */
 .tabs {
     display: flex;

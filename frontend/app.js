@@ -751,38 +751,170 @@ function clearGalleryResultMessage() {
 }
 
 async function checkUpdates() {
+    const banner = document.getElementById('update-banner');
+    if (!banner) return;
+
+    const pendingUpdates = []; // { type: 'binary'|'app', data }
+
+    // ── 1. Check yt-dlp & gallery-dl ──────────────────────────
     try {
         const versions = await window.go.main.App.GetVersionStatus();
-        const ytdlp = versions.find(v => v.name === 'yt-dlp');
-        
-        if (ytdlp && ytdlp.canUpgrade) {
-            const banner = document.getElementById('update-banner');
-            if (banner) {
-                banner.innerHTML = `
-                    <span>🚀 A new version of yt-dlp is available (v${ytdlp.current} → v${ytdlp.latest})</span>
-                    <button class="upgrade-btn" id="upgradeBtn">Upgrade Now</button>
-                `;
-                banner.style.display = 'flex';
-                
-                document.getElementById('upgradeBtn').addEventListener('click', async () => {
-                    const btn = document.getElementById('upgradeBtn');
-                    const span = banner.querySelector('span');
-                    btn.style.display = 'none';
-                    if (span) span.innerText = 'Initializing upgrade...';
-                    try {
-                        await window.go.main.App.UpgradeBinary('yt-dlp');
-                        banner.innerHTML = '<span>✅ yt-dlp upgraded successfully! Please restart the app.</span>';
-                        setTimeout(() => banner.style.display = 'none', 8000);
-                    } catch (err) {
-                        banner.innerHTML = `<span>❌ Upgrade failed: ${err}. Try running 'yt-dlp -U' manually.</span>`;
-                        setTimeout(() => banner.style.display = 'none', 10000);
-                    }
+        for (const v of versions) {
+            if (v.canUpgrade) pendingUpdates.push({ type: 'binary', data: v });
+        }
+    } catch (err) {
+        console.error('[UPDATER] GetVersionStatus error:', err);
+    }
+
+    // ── 2. Check YTDown app itself ─────────────────────────────
+    try {
+        const appInfo = await window.go.main.App.GetAppUpdateInfo();
+        if (appInfo && appInfo.available) {
+            pendingUpdates.push({ type: 'app', data: appInfo });
+        }
+    } catch (err) {
+        console.error('[UPDATER] GetAppUpdateInfo error:', err);
+    }
+
+    if (pendingUpdates.length === 0) return;
+
+    // ── 3. Render banner ───────────────────────────────────────
+    const itemsHTML = pendingUpdates.map(u => {
+        if (u.type === 'binary') {
+            const { name, current, latest } = u.data;
+            const icon = name === 'yt-dlp' ? '🚀' : '📦';
+            return `
+            <div class="update-item" data-tool="${name}">
+                <span class="update-msg">
+                    ${icon} <strong>${name}</strong> v${latest} available
+                    <span class="version-hint">(current: v${current})</span>
+                </span>
+                <div class="update-actions">
+                    <button class="upgrade-btn" id="upgradeBtn-${name}">Upgrade Now</button>
+                </div>
+            </div>`;
+        } else {
+            const { current, latest, releaseUrl } = u.data;
+            const releaseLink = releaseUrl
+                ? `<a class="upgrade-btn upgrade-btn--ghost" href="${releaseUrl}" target="_blank" rel="noopener">Release Notes ↗</a>`
+                : '';
+            return `
+            <div class="update-item update-item--app" data-tool="ytdown-app">
+                <span class="update-msg">
+                    🆕 <strong>YTDown</strong> v${latest} available
+                    <span class="version-hint">(current: v${current})</span>
+                </span>
+                <div class="update-actions">
+                    <button class="upgrade-btn" id="upgradeBtn-ytdown-app">🔄 Auto Update</button>
+                    <button class="upgrade-btn upgrade-btn--secondary" id="brewCopyBtn">📋 brew upgrade</button>
+                    ${releaseLink}
+                </div>
+            </div>`;
+        }
+    }).join('');
+
+    banner.innerHTML = `
+        <div class="update-items-list">${itemsHTML}</div>
+        <button class="banner-close-btn" id="bannerDismiss" title="Dismiss">✕</button>
+    `;
+    banner.style.display = 'flex';
+    banner.classList.add('update-banner--multi');
+
+    // ── 4. Nút close banner ────────────────────────────────────
+    document.getElementById('bannerDismiss')?.addEventListener('click', () => {
+        banner.style.display = 'none';
+    });
+
+    // ── 5. Wire nút Upgrade Now cho yt-dlp / gallery-dl ────────
+    for (const u of pendingUpdates) {
+        if (u.type !== 'binary') continue;
+        const { name } = u.data;
+        const btn = document.getElementById(`upgradeBtn-${name}`);
+        if (!btn) continue;
+
+        btn.addEventListener('click', async () => {
+            const item = banner.querySelector(`[data-tool="${name}"]`);
+            btn.disabled = true;
+            btn.textContent = 'Upgrading...';
+            try {
+                await window.go.main.App.UpgradeBinary(name);
+                if (item) {
+                    item.innerHTML = `<span class="update-msg update-msg--success">✅ ${name} upgraded! Restart the app to apply.</span>`;
+                }
+                setTimeout(() => {
+                    item?.remove();
+                    if (!banner.querySelector('.update-item')) banner.style.display = 'none';
+                }, 9000);
+            } catch (err) {
+                if (item) {
+                    const msg = item.querySelector('.update-msg');
+                    if (msg) msg.textContent = `❌ Upgrade failed: ${err}`;
+                }
+                btn.disabled = false;
+                btn.textContent = 'Retry';
+            }
+        });
+    }
+
+    // ── 6. YTDown Auto Update ──────────────────────────────────
+    document.getElementById('upgradeBtn-ytdown-app')?.addEventListener('click', async () => {
+        const item = banner.querySelector('[data-tool="ytdown-app"]');
+        const btn = document.getElementById('upgradeBtn-ytdown-app');
+        if (btn) { btn.disabled = true; btn.textContent = 'Preparing...'; }
+
+        // Lắng nghe event từ backend khi bắt đầu tải
+        if (window.runtime && window.runtime.EventsOn) {
+            window.runtime.EventsOn('app-update-started', (payload) => {
+                if (item) {
+                    item.innerHTML = `<span class="update-msg update-msg--success">
+                        ✅ Downloading YTDown v${payload.version}... App will restart automatically.
+                    </span>`;
+                }
+            });
+        }
+
+        try {
+            await window.go.main.App.InstallAppUpdate();
+            // Nếu tới được đây (chưa quit) thì show thông báo chờ
+            if (item) {
+                item.innerHTML = `<span class="update-msg update-msg--success">
+                    ✅ Update started — app will restart automatically.
+                </span>`;
+            }
+        } catch (err) {
+            // Auto update thất bại → fallback hướng dẫn brew
+            if (item) {
+                item.innerHTML = `
+                <span class="update-msg">
+                    ⚠️ Auto update failed. Run in Terminal:
+                    <code class="brew-cmd">brew upgrade --cask ytdown</code>
+                </span>
+                <div class="update-actions">
+                    <button class="upgrade-btn upgrade-btn--secondary" id="brewCopyBtn2">📋 Copy Command</button>
+                </div>`;
+                document.getElementById('brewCopyBtn2')?.addEventListener('click', () => {
+                    navigator.clipboard.writeText('brew upgrade --cask ytdown');
+                    const b = document.getElementById('brewCopyBtn2');
+                    if (b) { b.textContent = '✅ Copied!'; setTimeout(() => { b.textContent = '📋 Copy Command'; }, 2000); }
                 });
             }
         }
-    } catch (err) {
-        console.error('[UPDATER] Error checking updates:', err);
-    }
+    });
+
+    // ── 7. Copy brew command ────────────────────────────────────
+    document.getElementById('brewCopyBtn')?.addEventListener('click', () => {
+        navigator.clipboard.writeText('brew upgrade --cask ytdown').then(() => {
+            const btn = document.getElementById('brewCopyBtn');
+            if (btn) {
+                const orig = btn.textContent;
+                btn.textContent = '✅ Copied!';
+                setTimeout(() => { btn.textContent = orig; }, 2000);
+            }
+        }).catch(() => {
+            const btn = document.getElementById('brewCopyBtn');
+            if (btn) btn.textContent = 'brew upgrade --cask ytdown';
+        });
+    });
 }
 
 let lastSetHeight = 0;
