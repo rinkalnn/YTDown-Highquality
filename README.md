@@ -164,4 +164,8 @@ Nếu YTDown giúp ích cho công việc của bạn, hãy mời mình một ly 
 - **Số tài khoản:** `0798888888888`
 - **Chủ tài khoản:** `Nguyen Duc Huy`
 
+### 🌍 International supporters
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/justinnguyenvn)
+> Support via PayPal — available worldwide 🌏
+
 Cảm ơn bạn đã sử dụng YTDown! 🚀

@@ -8,6 +8,8 @@ export function CancelGalleryDownload():Promise<void>;
 
 export function CheckBinaries():Promise<Record<string, any>>;
 
+export function CheckDependencies():Promise<main.DependencyCheckResult>;
+
 export function CheckPlaylist(arg1:string):Promise<Record<string, any>>;
 
 export function ClearCookieConfig():Promise<void>;
@@ -17,6 +19,8 @@ export function GetAppInfo():Promise<main.AppInfo>;
 export function GetAppUpdateInfo():Promise<main.AppUpdateInfo>;
 
 export function GetAvailableBrowsers():Promise<Array<string>>;
+
+export function GetBrewInstallStatus():Promise<Record<string, any>>;
 
 export function GetCookieConfig():Promise<main.CookieConfig>;
 
@@ -28,6 +32,8 @@ export function GetVideoInfo(arg1:string):Promise<main.VideoInfo>;
 
 export function InstallAppUpdate():Promise<void>;
 
+export function InstallDependencies(arg1:Array<string>):Promise<boolean|string>;
+
 export function LaunchSetupTerminal():Promise<void>;
 
 export function OpenFile(arg1:string):Promise<void>;
@@ -37,6 +43,8 @@ export function OpenFolderDialog():Promise<string>;
 export function OpenSaveFolder(arg1:string):Promise<void>;
 
 export function PauseBatchDownload():Promise<void>;
+
+export function PromptToInstallDependencies():Promise<boolean|string>;
 
 export function ResumeBatchDownload(arg1:string,arg2:string,arg3:string,arg4:number):Promise<string>;
 

@@ -14,6 +14,10 @@ export function CheckBinaries() {
   return window['go']['main']['App']['CheckBinaries']();
 }
 
+export function CheckDependencies() {
+  return window['go']['main']['App']['CheckDependencies']();
+}
+
 export function CheckPlaylist(arg1) {
   return window['go']['main']['App']['CheckPlaylist'](arg1);
 }
@@ -32,6 +36,10 @@ export function GetAppUpdateInfo() {
 
 export function GetAvailableBrowsers() {
   return window['go']['main']['App']['GetAvailableBrowsers']();
+}
+
+export function GetBrewInstallStatus() {
+  return window['go']['main']['App']['GetBrewInstallStatus']();
 }
 
 export function GetCookieConfig() {
@@ -54,6 +62,10 @@ export function InstallAppUpdate() {
   return window['go']['main']['App']['InstallAppUpdate']();
 }
 
+export function InstallDependencies(arg1) {
+  return window['go']['main']['App']['InstallDependencies'](arg1);
+}
+
 export function LaunchSetupTerminal() {
   return window['go']['main']['App']['LaunchSetupTerminal']();
 }
@@ -72,6 +84,10 @@ export function OpenSaveFolder(arg1) {
 
 export function PauseBatchDownload() {
   return window['go']['main']['App']['PauseBatchDownload']();
+}
+
+export function PromptToInstallDependencies() {
+  return window['go']['main']['App']['PromptToInstallDependencies']();
 }
 
 export function ResumeBatchDownload(arg1, arg2, arg3, arg4) {

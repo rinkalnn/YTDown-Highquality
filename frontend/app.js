@@ -1,5 +1,4 @@
 // Wails v2 application main logic
-
 // Add debug logging as soon as script loads
 console.log('[BOOT] app.js loaded');
 
@@ -2059,3 +2058,7 @@ function renderInfoTab() {
     </div>
   `;
 }
+
+document.getElementById('donateBtnKofi')?.addEventListener('click', () => {
+  window.runtime.BrowserOpenURL('https://ko-fi.com/justinnguyenvn');
+});
