@@ -64,7 +64,6 @@ jobs:
           git push origin -f "refs/tags/$TAG"
 
           gh release create "$TAG" \
-            "dist/YTDown-$VERSION.zip" \
             "dist/YTDown-$VERSION.dmg" \
             --title "$TITLE" \
             --notes "Automated release for version $VERSION"
