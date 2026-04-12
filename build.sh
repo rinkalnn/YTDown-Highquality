@@ -19,6 +19,12 @@ else
 fi
 
 YEAR=$(date +"%Y")
+
+if [ -n "$GITHUB_OUTPUT" ]; then
+  echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+  echo "year=$YEAR" >> "$GITHUB_OUTPUT"
+fi
+
 OUTPUT_DIR="dist"
 APP_NAME="YTDown"
 APP_BUNDLE="build/bin/$APP_NAME.app"
