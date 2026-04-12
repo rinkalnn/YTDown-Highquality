@@ -43,6 +43,9 @@ Nếu bạn muốn tự tay Build ứng dụng từ mã nguồn, hãy làm theo 
 Nhấn phím `Command (⌘) + Space`, gõ **Terminal** và nhấn **Enter**. Một cửa sổ lệnh sẽ hiện ra.
 
 ### 2. Cài đặt Homebrew (Nếu chưa có)
+
+Có thể sử dụng các AI như Gemini, ChatGPT để hỏi cách cài đặt Homebrew phù hợp với dòng máy hiện tại đang sử dụng.
+
 Homebrew là trình quản lý gói dành cho macOS. Hãy copy dòng lệnh sau và dán vào Terminal, sau đó nhấn **Enter**:
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -52,13 +55,13 @@ Homebrew là trình quản lý gói dành cho macOS. Hãy copy dòng lệnh sau 
 
 **Nếu dùng Mac chip Apple Silicon (M1/M2/M3):**
 ```bash
-(echo; echo 'eval "$(/opt/homebrew/bin/brew shellenv)"') >> ~/.zprofile
+(echo; echo 'eval "$(/opt/homebrew/bin/brew shellenv)"') >> ~/.zshrc
 eval "$(/opt/homebrew/bin/brew shellenv)"
 ```
 
 **Nếu dùng Mac chip Intel (x86_64):**
 ```bash
-(echo; echo 'eval "$(/usr/local/bin/brew shellenv)"') >> ~/.zprofile
+(echo; echo 'eval "$(/usr/local/bin/brew shellenv)"') >> ~/.zshrc
 eval "$(/usr/local/bin/brew shellenv)"
 ```
 
@@ -67,7 +70,7 @@ eval "$(/usr/local/bin/brew shellenv)"
 
 Chạy lệnh này để khởi động lại zsh.
 ```bash
-source ~/.zprofile
+source ~/.zshrc
 ```
 
 ### 3. Cài đặt các công cụ hỗ trợ (Cho Development)
