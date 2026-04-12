@@ -19,14 +19,18 @@ type GalleryInfo struct {
 
 // DownloadGalleryWithOpts downloads images using gallery-dl with custom options
 func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options GalleryDownloadOptions) error {
+	// Resolve short URLs before passing to gallery-dl
+	resolvedURL := ResolveShortURL(url, manager.GetUA())
+
+	if IsXiaohongshu(resolvedURL) {
+		return DownloadXiaohongshuGallery(ctx, index, resolvedURL, options)
+	}
+
 	gallerydlPath := getResourcePath("gallery-dl")
 
 	if gallerydlPath == "" {
 		return fmt.Errorf("gallery-dl not found. Please install it using the Setup Dependencies button.")
 	}
-
-	// Resolve short URLs before passing to gallery-dl
-	resolvedURL := ResolveShortURL(url, manager.GetUA())
 
 	args := []string{
 		"--directory", options.SavePath,
@@ -76,7 +80,7 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 		filter := fmt.Sprintf("extension in (%s)", strings.Join(quotedFormats, ", "))
 		args = append(args, "--filter", filter)
 	} else {
-		// If no formats selected, we still want to skip videos by default 
+		// If no formats selected, we still want to skip videos by default
 		// if the user intended "Images" tab for images.
 		args = append(args, "--filter", "extension not in ('mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv', 'flv')")
 	}
@@ -120,7 +124,7 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	// Read output to track progress
 	scanner := bufio.NewScanner(stdout)
 	count := 0
-	
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
@@ -132,11 +136,11 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 			count++
 			runtime.EventsEmit(ctx, "gallery-progress", map[string]interface{}{
 				"index":      index,
-				"percentage": 0.0, 
+				"percentage": 0.0,
 				"speed":      fmt.Sprintf("Downloaded %d files", count),
 				"eta":        "Downloading...",
 			})
-			
+
 			filename := filepath.Base(line)
 			runtime.EventsEmit(ctx, "gallery-title", map[string]interface{}{
 				"index": index,
@@ -182,7 +186,7 @@ func DownloadGallery(ctx context.Context, index int, url, savePath string) error
 	})
 }
 
-// splitArguments splits a command line string into separate arguments, 
+// splitArguments splits a command line string into separate arguments,
 // respecting single and double quotes.
 func splitArguments(s string) ([]string, error) {
 	var args []string
