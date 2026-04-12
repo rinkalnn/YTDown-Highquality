@@ -149,10 +149,13 @@ func normalizeReleaseVersion(version string) string {
 }
 
 func compareDateVersions(a, b string) int {
-	parse := func(v string) [3]int {
-		var out [3]int
+	// "2026.4.13"   → [2026, 4, 13, 0]  (patch mặc định = 0)
+	// "2026.4.13.1" → [2026, 4, 13, 1]
+	// "2026.4.13.2" → [2026, 4, 13, 2]
+	parse := func(v string) [4]int {
+		var out [4]int // patch mặc định = 0
 		parts := strings.Split(v, ".")
-		for i := 0; i < len(parts) && i < 3; i++ {
+		for i := 0; i < len(parts) && i < 4; i++ {
 			n, _ := strconv.Atoi(parts[i])
 			out[i] = n
 		}
@@ -161,7 +164,7 @@ func compareDateVersions(a, b string) int {
 
 	av := parse(a)
 	bv := parse(b)
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		if av[i] > bv[i] {
 			return 1
 		}

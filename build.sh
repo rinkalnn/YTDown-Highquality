@@ -4,8 +4,20 @@
 
 set -e
 
-# Generate version based on current date (yyyy.mm.dd)
-VERSION=$(date +"%Y.%m.%d")
+BASE_DATE=$(date +"%-Y.%-m.%-d")
+
+# Bản đầu tiên: "2026.4.13" (không có .0)
+# Bản hotfix:   "2026.4.13.1", "2026.4.13.2"...
+if git rev-parse "$BASE_DATE" >/dev/null 2>&1; then
+    PATCH=1
+    while git rev-parse "$BASE_DATE.$PATCH" >/dev/null 2>&1; do
+        PATCH=$((PATCH + 1))
+    done
+    VERSION="$BASE_DATE.$PATCH"
+else
+    VERSION="$BASE_DATE"
+fi
+
 YEAR=$(date +"%Y")
 OUTPUT_DIR="dist"
 APP_NAME="YTDown"
@@ -32,7 +44,7 @@ rm -rf "$APP_BUNDLE" dist/
 # Build for macOS (universal binary)
 echo "📦 Building universal binary (Apple Silicon + Intel)..."
 wails build -platform darwin/universal \
-    -ldflags "-X main.Version=$VERSION" \
+    -ldflags "-s -w -X main.Version=${VERSION}" \
     -o "$APP_NAME" \
     -nsis=false
 
