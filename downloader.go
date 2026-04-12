@@ -411,7 +411,7 @@ func GetVideoMetadata(ctx context.Context, url string) (*VideoInfo, error) {
 
 	// Use -J for JSON output which is much more reliable than line-based output
 	args := []string{"-J", "--no-warnings", "--no-playlist"}
-	
+
 	// Add referer for Xiaohongshu
 	if IsXiaohongshu(url) {
 		args = append(args, "--referer", "https://www.xiaohongshu.com/")
@@ -425,12 +425,14 @@ func GetVideoMetadata(ctx context.Context, url string) (*VideoInfo, error) {
 	LogDebug("[Metadata] Fetching JSON metadata for %s", url)
 	cmd := exec.CommandContext(ctx, ytdlpPath, args...)
 
+	var stderrBuf strings.Builder
+	cmd.Stderr = &stderrBuf
+
 	// Capture only stdout for the JSON data
 	output, err := cmd.Output()
 	if err != nil {
-		// If fails, try to get error message from CombinedOutput for debugging
-		combined, _ := exec.CommandContext(ctx, ytdlpPath, args...).CombinedOutput()
-		LogError("[Metadata] yt-dlp failed: %v, output: %s", err, string(combined))
+		// Stderr đã được capture sẵn, log trực tiếp không cần chạy lại yt-dlp
+		LogError("[Metadata] yt-dlp failed: %v, stderr: %s", err, stderrBuf.String())
 		return nil, err
 	}
 
@@ -503,7 +505,7 @@ func downloadThumbnailAsBase64(ctx context.Context, thumbnailURL string, url str
 		manager.state.mu.RLock()
 		xhsSession := manager.state.xhsSession
 		manager.state.mu.RUnlock()
-		
+
 		if xhsSession != "" {
 			req.Header.Set("Cookie", "web_session="+xhsSession)
 		}
@@ -568,8 +570,14 @@ func GetPlaylistVideos(ctx context.Context, url string) ([]string, error) {
 	args = append(args, url)
 
 	cmd := exec.CommandContext(ctx, ytdlpPath, args...)
+	// Khai báo buffer cho stderr TRƯỚC khi chạy
+	var stderrBuf strings.Builder
+	cmd.Stderr = &stderrBuf // ← Gắn vào cmd thay vì tạo process mới
+
 	output, err := cmd.Output()
 	if err != nil {
+		// Dùng stderrBuf đã capture, không cần process thứ 2
+		LogError("[Metadata] yt-dlp failed: %v, stderr: %s", err, stderrBuf.String())
 		return nil, err
 	}
 

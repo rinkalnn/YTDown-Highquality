@@ -910,13 +910,12 @@ func (a *App) retryRestrictedBatchDownloads() {
 	format := a.currentBatch.Format
 	quality := a.currentBatch.Quality
 	savePath := a.currentBatch.SavePath
+	// ✅ Capture sessionID NGAY TẠI ĐÂY, trước khi Unlock
+	batchSessionID := a.currentBatch.SessionID
 	items := make([]retryItem, 0, len(a.currentBatch.RestrictedFailures))
 
 	for index, failure := range a.currentBatch.RestrictedFailures {
-		items = append(items, retryItem{
-			index: index,
-			url:   failure.URL,
-		})
+		items = append(items, retryItem{index: index, url: failure.URL})
 	}
 	a.batchMu.Unlock()
 
@@ -950,14 +949,27 @@ func (a *App) retryRestrictedBatchDownloads() {
 			}
 
 			a.clearRestrictedFailure(item.index)
+
+			a.batchMu.Lock()
+			if a.currentBatch != nil {
+				a.currentBatch.ItemStates[item.index] = "done"
+			}
+			a.batchMu.Unlock()
+
 			runtime.EventsEmit(a.ctx, "batch-status", map[string]interface{}{
 				"index":  item.index,
 				"status": "done",
 			})
+
+			// Trigger finalize sau mỗi success (finalizeBatchRun tự check all-done)
+			a.finalizeBatchRun(batchSessionID)
 		}(item)
 	}
 
 	wg.Wait()
+
+	// ✅ THÊM: đảm bảo finalize ngay cả khi tất cả retry đều fail
+	a.finalizeBatchRun(batchSessionID)
 }
 
 // SelectFiles opens native file picker for multiple files

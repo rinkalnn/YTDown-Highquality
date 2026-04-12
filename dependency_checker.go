@@ -140,8 +140,13 @@ func getToolVersion(toolName string, toolPath string) string {
 	lines := strings.Split(string(output), "\n")
 	if len(lines) > 0 {
 		version := strings.TrimSpace(lines[0])
-		// Clean up version string
-		version = strings.Fields(version)[0]
+		if version == "" {
+			return "unknown"
+		}
+		fields := strings.Fields(version)
+		if len(fields) > 0 {
+			return fields[0]
+		}
 		return version
 	}
 
@@ -169,12 +174,22 @@ func (a *App) GetBrewInstallStatus() map[string]interface{} {
 	var version string
 
 	if installed {
-		p, _ := exec.LookPath("brew")
-		path = p
-
-		cmd := exec.Command("brew", "--version")
-		if out, err := cmd.Output(); err == nil {
-			version = strings.TrimSpace(string(out))
+		// Tìm path thực của brew (giống logic isBrewInstalled)
+		if p, err := exec.LookPath("brew"); err == nil {
+			path = p
+		} else {
+			for _, p := range []string{"/opt/homebrew/bin/brew", "/usr/local/bin/brew"} {
+				if _, err := os.Stat(p); err == nil {
+					path = p
+					break
+				}
+			}
+		}
+		if path != "" {
+			cmd := exec.Command(path, "--version") // ← Dùng path tuyệt đối
+			if out, err := cmd.Output(); err == nil {
+				version = strings.TrimSpace(string(out))
+			}
 		}
 	}
 
