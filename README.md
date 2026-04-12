@@ -13,7 +13,7 @@ YTDown là ứng dụng Desktop mạnh mẽ, đơn giản dành cho macOS, giúp
 ### 🍺 Cài đặt qua Homebrew (Recommended)
 
 ```bash
-brew tap JustinNguyen9979/ytdown
+brew tap justinNguyen9979/ytdown
 brew install --cask ytdown
 ```
 
@@ -127,7 +127,6 @@ Dành cho các bạn muốn đóng góp hoặc tùy chỉnh ứng dụng:
 
 - Hỗ trợ tải video chất lượng cao từ nhiều nguồn: **YouTube, Facebook/Instagram Reels, TikTok, Xiaohongshu/Rednote**,...
 - Hỗ trợ download bằng **cookie** cho các video ytb bị giới hạn.
-- **Cookie sẽ bị xóa ngay sau khi đóng app.**
 - Tự động nhận diện và xử lý liên kết thông minh.
 - Hỗ trợ tải từng video đơn lẻ hoặc toàn bộ danh sách phát (Playlist).
 - Tùy chọn định dạng xuất tệp: `MP4` (Video) hoặc `MP3` (Âm thanh).
@@ -149,6 +148,8 @@ YTDown/
 ├── frontend/       # Giao diện người dùng (JS/HTML/CSS)
 ├── build.sh        # Script đóng gói ứng dụng chuyên nghiệp
 └── README.md       # Tài liệu hướng dẫn
+├── dependency_checker.go  # Tự động kiểm tra & cài dependencies
+├── app_update.go          # Tự động kiểm tra cập nhật phiên bản
 ```
 
 ## 📄 License
