@@ -55,28 +55,31 @@ func (a *App) CheckDependencies() DependencyCheckResult {
 
 // InstallDependencies installs missing dependencies via Homebrew
 func (a *App) InstallDependencies(tools []string) (bool, string) {
-	// Check if Homebrew is installed
-	if !isBrewInstalled() {
-		return false, "Homebrew is not installed. Please install Homebrew first:\nhttps://brew.sh"
+	// Tìm đường dẫn brew thực tế
+	brewPath := ""
+	if p, err := exec.LookPath("brew"); err == nil {
+		brewPath = p
+	} else {
+		for _, p := range []string{"/opt/homebrew/bin/brew", "/usr/local/bin/brew"} {
+			if _, err := os.Stat(p); err == nil {
+				brewPath = p
+				break
+			}
+		}
+	}
+	if brewPath == "" {
+		return false, "Homebrew is not installed. Please install: https://brew.sh"
 	}
 
 	for _, tool := range tools {
-		// Skip if already installed
 		if status := checkTool(tool); status.Installed {
-			fmt.Printf("✅ %s is already installed (v%s)\n", tool, status.Version)
 			continue
 		}
-
-		fmt.Printf("📦 Installing %s via Homebrew...\n", tool)
-
-		cmd := exec.Command("brew", "install", tool)
+		cmd := exec.Command(brewPath, "install", tool) // ← dùng path tuyệt đối
 		if err := cmd.Run(); err != nil {
 			return false, fmt.Sprintf("Failed to install %s: %v", tool, err)
 		}
-
-		fmt.Printf("✅ Successfully installed %s\n", tool)
 	}
-
 	return true, ""
 }
 
