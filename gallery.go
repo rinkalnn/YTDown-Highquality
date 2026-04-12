@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -34,7 +35,8 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	}
 
 	args := []string{
-		"--directory", options.SavePath,
+		"--destination", options.SavePath,
+		"-o", `directory=["{uploader|creator|title|category}"]`,
 	}
 
 	if options.UgoiraToWebm {
@@ -141,6 +143,8 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	// Đọc stdout bình thường (không bị block bởi stderr nữa)
 	scanner := bufio.NewScanner(stdout)
 	count := 0
+	galleryTitle := "" // lưu title lấy từ dòng [platform][identifier]
+	titleRegex := regexp.MustCompile(`^\[[\w:]+\]\[([^\]]+)\]`)
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -148,8 +152,19 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 			continue
 		}
 
-		// If it's a file path (doesn't start with [), it's a downloaded file
-		if !strings.HasPrefix(line, "[") {
+		if strings.HasPrefix(line, "[") {
+			// Parse [platform][identifier] để lấy title lần đầu
+			if galleryTitle == "" {
+				if match := titleRegex.FindStringSubmatch(line); len(match) > 1 {
+					galleryTitle = match[1]
+					runtime.EventsEmit(ctx, "gallery-title", map[string]interface{}{
+						"index": index,
+						"title": galleryTitle,
+					})
+				}
+			}
+		} else {
+			// Đây là file path vừa được download
 			count++
 			runtime.EventsEmit(ctx, "gallery-progress", map[string]interface{}{
 				"index":      index,
@@ -157,27 +172,10 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 				"speed":      fmt.Sprintf("Downloaded %d files", count),
 				"eta":        "Downloading...",
 			})
-
-			filename := filepath.Base(line)
-			runtime.EventsEmit(ctx, "gallery-title", map[string]interface{}{
-				"index": index,
-				"title": "Gallery: " + filename,
-			})
-		} else {
-			// Extract title or other info if possible
-			// [pixiv][info] ...
 		}
 	}
 
 	<-stderrDone // Đảm bảo đã đọc hết stderr trước khi tiếp tục
-
-	errScanner := bufio.NewScanner(stderr)
-
-	for errScanner.Scan() {
-		line := errScanner.Text()
-		LogInfo("[GDL] stderr: %s", line)
-		stderrOutput.WriteString(line + "\n")
-	}
 
 	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
@@ -212,8 +210,8 @@ func splitArguments(s string) ([]string, error) {
 	var current strings.Builder
 	var inQuotes rune
 
-	for i := 0; i < len(s); i++ {
-		r := rune(s[i])
+	// ✅ range trên string tự decode UTF-8 → r là rune đúng
+	for _, r := range s {
 		if inQuotes != 0 {
 			if r == inQuotes {
 				inQuotes = 0
@@ -221,14 +219,15 @@ func splitArguments(s string) ([]string, error) {
 				current.WriteRune(r)
 			}
 		} else {
-			if r == '\'' || r == '"' {
+			switch r {
+			case '\'', '"':
 				inQuotes = r
-			} else if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+			case ' ', '\t', '\n', '\r':
 				if current.Len() > 0 {
 					args = append(args, current.String())
 					current.Reset()
 				}
-			} else {
+			default:
 				current.WriteRune(r)
 			}
 		}
