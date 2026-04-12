@@ -147,8 +147,16 @@ func getToolVersion(toolName string, toolPath string) string {
 
 // isBrewInstalled checks if Homebrew is installed
 func isBrewInstalled() bool {
-	_, err := exec.LookPath("brew")
-	return err == nil
+	if _, err := exec.LookPath("brew"); err == nil {
+		return true
+	}
+	// Fallback khi mở từ Finder
+	for _, p := range []string{"/opt/homebrew/bin/brew", "/usr/local/bin/brew"} {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // GetBrewInstallStatus returns information about Homebrew installation
