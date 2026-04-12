@@ -1043,16 +1043,14 @@ function setupGoEvents() {
                 }
             });
 
-            window.runtime.EventsOn('video-title', (title) => {
-                const rows = document.querySelectorAll('#batchTableBody tr');
-                rows.forEach(row => {
-                    const statusCell = row.querySelector('td:nth-child(4)');
-                    const titleCell = row.querySelector('td:nth-child(3)');
-                    if (statusCell && statusCell.innerText.includes('Downloading') && titleCell && titleCell.innerText.startsWith('http')) {
-                         titleCell.innerText = truncateMiddle(title.replace(/^["']|["']$/g, ''), 40);
-                         titleCell.title = title;
-                    }
-                });
+            window.runtime.EventsOn('video-title', (data) => {
+                const row = document.getElementById(`batch-row-${data.index}`);
+                if (!row) return;
+                const titleCell = row.querySelector('td:nth-child(3)');
+                if (titleCell) {
+                    titleCell.innerText = truncateMiddle(data.title.replace(/^["']|["']$/g, ''), 40);
+                    titleCell.title = data.title;
+                }
             });
             
             window.runtime.EventsOn('gallery-progress', (data) => {

@@ -199,7 +199,10 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 				if ext := filepath.Ext(title); ext != "" {
 					title = title[:len(title)-len(ext)]
 				}
-				runtime.EventsEmit(ctx, "video-title", title)
+				runtime.EventsEmit(ctx, "video-title", map[string]interface{}{
+					"index": index,
+					"title": title,
+				})
 			}
 		}
 
@@ -213,7 +216,11 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 				if ext := filepath.Ext(title); ext != "" {
 					title = title[:len(title)-len(ext)]
 				}
-				runtime.EventsEmit(ctx, "video-title", title)
+				runtime.EventsEmit(ctx, "video-title", map[string]interface{}{
+					"index": index,
+					"title": title,
+				})
+
 			} else if strings.Contains(line, "has already been downloaded") {
 				// Handle case where file exists: "[download] /path/to/Title.mp4 has already been downloaded"
 				fullPath := strings.TrimSpace(strings.TrimPrefix(line, "[download] "))
@@ -223,7 +230,10 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 				if ext := filepath.Ext(title); ext != "" {
 					title = title[:len(title)-len(ext)]
 				}
-				runtime.EventsEmit(ctx, "video-title", title)
+				runtime.EventsEmit(ctx, "video-title", map[string]interface{}{
+					"index": index,
+					"title": title,
+				})
 				runtime.EventsEmit(ctx, "progress-update", map[string]interface{}{
 					"index":      index,
 					"percentage": 100.0,
