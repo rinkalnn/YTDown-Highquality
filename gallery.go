@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -121,7 +122,23 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 		return err
 	}
 
-	// Read output to track progress
+	// ✅ Đọc stderr trong goroutine SONG SONG để tránh deadlock
+	var stderrOutput strings.Builder
+	var stderrMu sync.Mutex
+	stderrDone := make(chan struct{})
+	go func() {
+		defer close(stderrDone)
+		errScanner := bufio.NewScanner(stderr)
+		for errScanner.Scan() {
+			line := errScanner.Text()
+			LogInfo("[GDL] stderr: %s", line)
+			stderrMu.Lock()
+			stderrOutput.WriteString(line + "\n")
+			stderrMu.Unlock()
+		}
+	}()
+
+	// Đọc stdout bình thường (không bị block bởi stderr nữa)
 	scanner := bufio.NewScanner(stdout)
 	count := 0
 
@@ -152,8 +169,10 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 		}
 	}
 
-	var stderrOutput strings.Builder
+	<-stderrDone // Đảm bảo đã đọc hết stderr trước khi tiếp tục
+
 	errScanner := bufio.NewScanner(stderr)
+
 	for errScanner.Scan() {
 		line := errScanner.Text()
 		LogInfo("[GDL] stderr: %s", line)

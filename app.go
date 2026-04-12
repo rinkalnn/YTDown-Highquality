@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -422,7 +421,7 @@ func (a *App) loadConfig() {
 		SavePath: filepath.Join(usr.HomeDir, "Downloads"),
 	}
 
-	if data, err := ioutil.ReadFile(configPath); err == nil {
+	if data, err := os.ReadFile(configPath); err == nil {
 		json.Unmarshal(data, a.config)
 	}
 }
@@ -435,7 +434,7 @@ func (a *App) saveConfig() {
 
 	os.MkdirAll(configDir, 0755)
 	if data, err := json.MarshalIndent(a.config, "", "  "); err == nil {
-		ioutil.WriteFile(configPath, data, 0644)
+		os.WriteFile(configPath, data, 0644)
 	}
 }
 
@@ -795,8 +794,10 @@ func (a *App) ResumeBatchDownload(format, quality, savePath string, maxConcurren
 
 func (a *App) CancelBatchDownload() error {
 	a.batchMu.Lock()
+	// ❌ Không dùng defer ở đây vì cần unlock sớm trước khi emit events
+
 	if a.currentBatch == nil || (a.currentBatch.Status != "running" && a.currentBatch.Status != "paused") {
-		a.batchMu.Unlock()
+		a.batchMu.Unlock() // ✅ Unlock rồi return
 		return fmt.Errorf("no active batch session")
 	}
 
@@ -810,7 +811,7 @@ func (a *App) CancelBatchDownload() error {
 	}
 
 	cancels := cloneCancelFuncs(a.currentBatch.ActiveCancels)
-	a.batchMu.Unlock()
+	a.batchMu.Unlock() // ✅ Unlock trước khi gọi external functions (tránh deadlock)
 
 	a.emitBatchStatuses(updatedStatuses)
 	for _, cancel := range cancels {

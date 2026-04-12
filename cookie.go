@@ -86,10 +86,12 @@ func (m *CookieManager) GetUA() string {
 	if ytdlp != "" {
 		// We ask for the user_agent it would use with this browser
 		cmd := exec.Command(ytdlp, "--cookies-from-browser", browser, "--print", "user_agent", "--terminate-on-connect", "https://www.google.com")
-		out, err := cmd.Output()
-		if err == nil && len(out) > 0 {
+		// Dùng CombinedOutput để bắt output dù exit code != 0
+		out, _ := cmd.Output() // Bỏ qua err vì --terminate-on-connect luôn exit != 0
+		if len(out) > 0 {
 			ua := strings.TrimSpace(string(out))
-			if ua != "" {
+			// Đảm bảo output là UA string thật, không phải log line của yt-dlp
+			if ua != "" && !strings.HasPrefix(ua, "[") && strings.Contains(ua, "Mozilla") {
 				return ua
 			}
 		}
