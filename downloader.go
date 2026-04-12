@@ -192,9 +192,14 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 		} else {
 			// Only log important transitions or status updates to app.log to keep it readable
 			// but enough to see where it "hangs"
-			if strings.Contains(line, "[download]") || strings.Contains(line, "[ExtractAudio]") ||
-				strings.Contains(line, "[Merger]") || strings.Contains(line, "[ffmpeg]") {
-				LogInfo("[yt-dlp] %s", line)
+			if strings.Contains(line, "[ExtractAudio]") && strings.Contains(line, "Destination:") {
+				fullPath := strings.TrimSpace(strings.TrimPrefix(line, "[ExtractAudio] Destination: "))
+				finalFilePath = fullPath // Override bằng file audio thật
+				title := filepath.Base(fullPath)
+				if ext := filepath.Ext(title); ext != "" {
+					title = title[:len(title)-len(ext)]
+				}
+				runtime.EventsEmit(ctx, "video-title", title)
 			}
 		}
 

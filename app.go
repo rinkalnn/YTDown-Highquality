@@ -1312,12 +1312,12 @@ func (a *App) StartCompression(filePaths []string, options CompressionOptions) e
 		for i, path := range filePaths {
 			if err := CompressFile(a.ctx, path, options, i); err != nil {
 				runtime.EventsEmit(a.ctx, "compression-error", map[string]interface{}{
-					"index":   i,
-					"message": err.Error(),
+					"index": i,
+					"error": err.Error(),
 				})
 			}
 		}
-		runtime.EventsEmit(a.ctx, "compression-all-done", map[string]interface{}{})
+		runtime.EventsEmit(a.ctx, "compression-complete", map[string]interface{}{})
 	}()
 
 	return nil
