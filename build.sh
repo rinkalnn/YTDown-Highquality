@@ -31,7 +31,7 @@ rm -rf "$APP_BUNDLE" dist/
 
 # Build for macOS (universal binary)
 echo "📦 Building universal binary (Apple Silicon + Intel)..."
-wails build -platform darwin -tags universal \
+wails build -platform darwin/universal \
     -ldflags "-X main.Version=$VERSION" \
     -o "$APP_NAME" \
     -nsis=false
