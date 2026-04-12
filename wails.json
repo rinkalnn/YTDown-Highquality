@@ -25,11 +25,7 @@
     },
     "mac": {
       "universalBuild": true,
-      "codeSigningIdentity": "",
-      "codesigningidentity": "",
-      "codesignidentity": "",
       "entitlements": "build/darwin/entitlements.plist",
-      "signingidentity": "",
       "signoptions": "nodot,adhoc"
     },
     "linux": {

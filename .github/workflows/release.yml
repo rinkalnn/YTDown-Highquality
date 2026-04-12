@@ -1,0 +1,70 @@
+name: Release macOS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: macos-latest
+    env:
+      TZ: Asia/Ho_Chi_Minh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Compute version
+        id: version
+        run: |
+          VERSION=$(date +'%Y.%m.%d')
+          YEAR=$(date +'%Y')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "year=$YEAR" >> "$GITHUB_OUTPUT"
+
+      - name: Build app and DMG
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          YEAR: ${{ steps.version.outputs.year }}
+        run: bash build.sh
+
+      - name: Upsert GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          TAG="$VERSION"
+          TITLE="YTDown $VERSION"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes --cleanup-tag || true
+          fi
+
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push origin -f "refs/tags/$TAG"
+
+          gh release create "$TAG" \
+            "dist/YTDown-$VERSION.zip" \
+            "dist/YTDown-$VERSION.dmg" \
+            --title "$TITLE" \
+            --notes "Automated release for version $VERSION"

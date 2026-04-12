@@ -16,6 +16,30 @@ export namespace main {
 	        this.author = source["author"];
 	    }
 	}
+	export class AppUpdateInfo {
+	    current: string;
+	    latest: string;
+	    available: boolean;
+	    releaseUrl: string;
+	    downloadUrl: string;
+	    assetName: string;
+	    releaseNotes: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AppUpdateInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.current = source["current"];
+	        this.latest = source["latest"];
+	        this.available = source["available"];
+	        this.releaseUrl = source["releaseUrl"];
+	        this.downloadUrl = source["downloadUrl"];
+	        this.assetName = source["assetName"];
+	        this.releaseNotes = source["releaseNotes"];
+	    }
+	}
 	export class BinaryVersion {
 	    name: string;
 	    current: string;

@@ -26,6 +26,10 @@ export function GetAppInfo() {
   return window['go']['main']['App']['GetAppInfo']();
 }
 
+export function GetAppUpdateInfo() {
+  return window['go']['main']['App']['GetAppUpdateInfo']();
+}
+
 export function GetAvailableBrowsers() {
   return window['go']['main']['App']['GetAvailableBrowsers']();
 }
@@ -44,6 +48,10 @@ export function GetVersionStatus() {
 
 export function GetVideoInfo(arg1) {
   return window['go']['main']['App']['GetVideoInfo'](arg1);
+}
+
+export function InstallAppUpdate() {
+  return window['go']['main']['App']['InstallAppUpdate']();
 }
 
 export function LaunchSetupTerminal() {

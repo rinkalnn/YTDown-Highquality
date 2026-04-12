@@ -14,6 +14,8 @@ export function ClearCookieConfig():Promise<void>;
 
 export function GetAppInfo():Promise<main.AppInfo>;
 
+export function GetAppUpdateInfo():Promise<main.AppUpdateInfo>;
+
 export function GetAvailableBrowsers():Promise<Array<string>>;
 
 export function GetCookieConfig():Promise<main.CookieConfig>;
@@ -23,6 +25,8 @@ export function GetDefaultSavePath():Promise<string>;
 export function GetVersionStatus():Promise<Array<main.BinaryVersion>>;
 
 export function GetVideoInfo(arg1:string):Promise<main.VideoInfo>;
+
+export function InstallAppUpdate():Promise<void>;
 
 export function LaunchSetupTerminal():Promise<void>;
 
