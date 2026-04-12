@@ -545,7 +545,6 @@ func (a *App) finalizeBatchRun(sessionID int64) {
 		a.batchMu.Unlock()
 		return
 	}
-
 	for _, status := range a.currentBatch.ItemStates {
 		if !isTerminalBatchStatus(status) {
 			a.batchMu.Unlock()
@@ -553,9 +552,18 @@ func (a *App) finalizeBatchRun(sessionID int64) {
 		}
 	}
 
+	// ✅ FIX BUG A: Không finalize nếu còn restricted failures chờ retry
+	if len(a.currentBatch.RestrictedFailures) > 0 {
+		a.batchMu.Unlock()
+		// Thông báo cho frontend biết batch đang chờ cookie
+		runtime.EventsEmit(a.ctx, "batch-waiting-cookie", map[string]interface{}{
+			"count": len(a.currentBatch.RestrictedFailures),
+		})
+		return
+	}
+
 	a.currentBatch.Status = "completed"
 	a.batchMu.Unlock()
-
 	runtime.EventsEmit(a.ctx, "batch-complete", map[string]interface{}{})
 }
 
@@ -938,6 +946,12 @@ func (a *App) retryRestrictedBatchDownloads() {
 			if err != nil {
 				failure := classifyDownloadFailure(err, true)
 				a.trackRestrictedFailure(item.index, item.url, err.Error())
+
+				runtime.EventsEmit(a.ctx, "batch-status", map[string]interface{}{
+					"index":  item.index,
+					"status": "error",
+				})
+
 				runtime.EventsEmit(a.ctx, "batch-error", map[string]interface{}{
 					"index":          item.index,
 					"error":          err.Error(),
@@ -972,12 +986,31 @@ func (a *App) retryRestrictedBatchDownloads() {
 	a.finalizeBatchRun(batchSessionID)
 }
 
+// DismissRestrictedFailures clears all restricted failures and finalizes batch
+func (a *App) DismissRestrictedFailures() error {
+	a.batchMu.Lock()
+	if a.currentBatch == nil || a.currentBatch.Status != "running" {
+		a.batchMu.Unlock()
+		return fmt.Errorf("no running batch session")
+	}
+	// Xóa toàn bộ restricted failures
+	a.currentBatch.RestrictedFailures = make(map[int]RestrictedFailure)
+	sessionID := a.currentBatch.SessionID
+	a.batchMu.Unlock()
+
+	// Finalize bình thường
+	a.finalizeBatchRun(sessionID)
+	return nil
+}
+
 // SelectFiles opens native file picker for multiple files
 func (a *App) SelectFiles(fileType string) []string {
 	pattern := "*.*"
-	if fileType == "video" {
+
+	switch fileType {
+	case "video":
 		pattern = "*.mp4;*.mkv;*.avi;*.mov;*.wmv;*.flv;*.webm"
-	} else if fileType == "image" {
+	case "image":
 		pattern = "*.jpg;*.jpeg;*.png;*.webp;*.bmp;*.gif;*.heic;*.avif"
 	}
 
@@ -1008,9 +1041,10 @@ func (a *App) SelectFolder(fileType string) []string {
 	}
 
 	var extensions []string
-	if fileType == "video" {
+	switch fileType {
+	case "video":
 		extensions = []string{".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"}
-	} else if fileType == "image" {
+	case "image":
 		extensions = []string{".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".heic", ".avif"}
 	}
 
