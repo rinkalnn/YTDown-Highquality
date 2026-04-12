@@ -13,12 +13,12 @@ import (
 
 // CompressionOptions stores settings for compression
 type CompressionOptions struct {
-	Type           string `json:"type"`     // "video" or "image"
-	Quality        string `json:"quality"`  // "low", "medium", "high", "custom"
-	CustomQuality  int    `json:"customQuality"` // 1-100
-	UseSlowPreset  bool   `json:"useSlowPreset"`
-	Format         string `json:"format"`   // "mp4", "webp", "jpg", "png", etc.
-	SavePath       string `json:"savePath"`
+	Type          string `json:"type"`          // "video" or "image"
+	Quality       string `json:"quality"`       // "low", "medium", "high", "custom"
+	CustomQuality int    `json:"customQuality"` // 1-100
+	UseSlowPreset bool   `json:"useSlowPreset"`
+	Format        string `json:"format"` // "mp4", "webp", "jpg", "png", etc.
+	SavePath      string `json:"savePath"`
 }
 
 // CompressFile handles single file compression
@@ -38,12 +38,12 @@ func CompressFile(ctx context.Context, inputPath string, options CompressionOpti
 	filename := filepath.Base(inputPath)
 	ext := filepath.Ext(filename)
 	nameWithoutExt := strings.TrimSuffix(filename, ext)
-	
+
 	outputExt := ext
 	if options.Format != "original" && options.Format != "" {
 		outputExt = "." + options.Format
 	}
-	
+
 	outputPath := filepath.Join(outputDir, nameWithoutExt+"_compressed"+outputExt)
 
 	var args []string
@@ -54,7 +54,7 @@ func CompressFile(ctx context.Context, inputPath string, options CompressionOpti
 	}
 
 	cmd := exec.Command(ffmpegPath, args...)
-	
+
 	// Capture stderr to diagnose issues
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
@@ -90,19 +90,25 @@ func buildVideoCompressArgs(input, output string, options CompressionOptions) []
 	if options.Quality == "custom" {
 		// Map 1-100 (Human) to 51-18 (CRF)
 		// 100 -> 18 (Best), 1 -> 51 (Worst)
-		val := 51 - (options.CustomQuality * (51 - 18) / 100)
+		val := 51 - int(float64(options.CustomQuality)*float64(51-18)/100.0)
 		crf = fmt.Sprintf("%d", val)
 	} else {
 		switch options.Quality {
 		case "low":
 			crf = "35"
-			if options.UseSlowPreset { preset = "slow" }
+			if options.UseSlowPreset {
+				preset = "slow"
+			}
 		case "medium":
 			crf = "30"
-			if options.UseSlowPreset { preset = "slow" }
+			if options.UseSlowPreset {
+				preset = "slow"
+			}
 		case "high":
 			crf = "25"
-			if options.UseSlowPreset { preset = "slow" }
+			if options.UseSlowPreset {
+				preset = "slow"
+			}
 		}
 	}
 
@@ -123,9 +129,9 @@ func buildVideoCompressArgs(input, output string, options CompressionOptions) []
 func buildImageCompressArgs(input, output string, options CompressionOptions) []string {
 	// For image output, we want to ensure we only take 1 frame if input is video.
 	// But if input is already an image, -frames:v 1 is sometimes problematic depending on ffmpeg version.
-	
+
 	args := []string{"-i", input}
-	
+
 	// If it's a video being converted to image, we MUST use -frames:v 1
 	// We'll check extension to guess.
 	ext := strings.ToLower(filepath.Ext(input))
@@ -149,8 +155,12 @@ func buildImageCompressArgs(input, output string, options CompressionOptions) []
 	if options.Quality == "custom" {
 		qValue = fmt.Sprintf("%d", options.CustomQuality)
 		jVal := 32 - (options.CustomQuality * 31 / 100)
-		if jVal < 1 { jVal = 1 }
-		if jVal > 31 { jVal = 31 }
+		if jVal < 1 {
+			jVal = 1
+		}
+		if jVal > 31 {
+			jVal = 31
+		}
 		jpegQ = fmt.Sprintf("%d", jVal)
 	} else {
 		switch options.Quality {

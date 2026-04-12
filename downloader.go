@@ -280,20 +280,66 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 	switch format {
 	case "MP4":
 		if quality == "Best" || quality == "Best Quality" {
-			// Matches the user's manual successful command: bestvideo+bestaudio/best
 			args = append(args, "-f", "bestvideo+bestaudio/best")
 		} else {
-			// Map quality to height
 			qualityHeight := qualityToHeight(quality)
 			args = append(args, "-f", fmt.Sprintf("bestvideo[height<=%s]+bestaudio/best[height<=%s]", qualityHeight, qualityHeight))
 		}
 		args = append(args, "--merge-output-format", "mp4")
+
+	case "MKV":
+		if quality == "Best" || quality == "Best Quality" {
+			args = append(args, "-f", "bestvideo+bestaudio/best")
+		} else {
+			qualityHeight := qualityToHeight(quality)
+			args = append(args, "-f", fmt.Sprintf("bestvideo[height<=%s]+bestaudio/best[height<=%s]", qualityHeight, qualityHeight))
+		}
+		args = append(args, "--merge-output-format", "mkv")
+
+	case "WEBM":
+		if quality == "Best" || quality == "Best Quality" {
+			args = append(args, "-f", "bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo+bestaudio/best")
+		} else {
+			qualityHeight := qualityToHeight(quality)
+			args = append(args, "-f", fmt.Sprintf("bestvideo[ext=webm][height<=%s]+bestaudio[ext=webm]/best[height<=%s]", qualityHeight, qualityHeight))
+		}
+		args = append(args, "--merge-output-format", "webm")
 
 	case "MP3":
 		args = append(args,
 			"-f", "bestaudio",
 			"--extract-audio",
 			"--audio-format", "mp3",
+			"--audio-quality", "0",
+		)
+
+	case "AAC":
+		args = append(args,
+			"-f", "bestaudio",
+			"--extract-audio",
+			"--audio-format", "aac",
+			"--audio-quality", "0",
+		)
+
+	case "WAV":
+		args = append(args,
+			"-f", "bestaudio",
+			"--extract-audio",
+			"--audio-format", "wav",
+		)
+
+	case "FLAC":
+		args = append(args,
+			"-f", "bestaudio",
+			"--extract-audio",
+			"--audio-format", "flac",
+		)
+
+	case "M4A":
+		args = append(args,
+			"-f", "bestaudio[ext=m4a]/bestaudio",
+			"--extract-audio",
+			"--audio-format", "m4a",
 			"--audio-quality", "0",
 		)
 	}

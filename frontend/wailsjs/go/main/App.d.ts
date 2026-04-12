@@ -14,6 +14,8 @@ export function CheckPlaylist(arg1:string):Promise<Record<string, any>>;
 
 export function ClearCookieConfig():Promise<void>;
 
+export function DismissRestrictedFailures():Promise<void>;
+
 export function GetAppInfo():Promise<main.AppInfo>;
 
 export function GetAppUpdateInfo():Promise<main.AppUpdateInfo>;
@@ -61,6 +63,8 @@ export function SetManualCookie(arg1:string):Promise<void>;
 export function SetTemporaryYouTubeCookie(arg1:string):Promise<void>;
 
 export function StartBatchDownload(arg1:Array<string>,arg2:string,arg3:string,arg4:string,arg5:number):Promise<string>;
+
+export function StartCompression(arg1:Array<string>,arg2:main.CompressionOptions):Promise<void>;
 
 export function StartDownload(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
 

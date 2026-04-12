@@ -144,10 +144,26 @@ func getToolVersion(toolName string, toolPath string) string {
 			return "unknown"
 		}
 		fields := strings.Fields(version)
-		if len(fields) > 0 {
-			return fields[0]
+
+		switch toolName {
+		case "ffmpeg":
+			// Output: "ffmpeg version 7.0.2 Copyright..."
+			// fields: ["ffmpeg", "version", "7.0.2", ...]
+			if len(fields) >= 3 && fields[1] == "version" {
+				return fields[2]
+			}
+		case "gallery-dl":
+			// Output: "gallery-dl 1.28.1"
+			// fields: ["gallery-dl", "1.28.1"]
+			if len(fields) >= 2 {
+				return fields[1]
+			}
+		default:
+			// yt-dlp output: "2024.03.10" — trả về trực tiếp
+			if len(fields) > 0 {
+				return fields[0]
+			}
 		}
-		return version
 	}
 
 	return "unknown"

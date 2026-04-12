@@ -1301,3 +1301,24 @@ func (a *App) StartGalleryDownload(url, savePath string) string {
 
 	return "Gallery download started"
 }
+
+// StartCompression compresses a list of files
+func (a *App) StartCompression(filePaths []string, options CompressionOptions) error {
+	if len(filePaths) == 0 {
+		return fmt.Errorf("no files selected")
+	}
+
+	go func() {
+		for i, path := range filePaths {
+			if err := CompressFile(a.ctx, path, options, i); err != nil {
+				runtime.EventsEmit(a.ctx, "compression-error", map[string]interface{}{
+					"index":   i,
+					"message": err.Error(),
+				})
+			}
+		}
+		runtime.EventsEmit(a.ctx, "compression-all-done", map[string]interface{}{})
+	}()
+
+	return nil
+}

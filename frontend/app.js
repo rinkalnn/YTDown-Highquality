@@ -39,12 +39,20 @@ function populateSelectOptions() {
 
   const selectConfig = [
     {
-      id: 'batchFormatSelect',
-      defaultValue: 'MP4',
-      options: [
-        { value: 'MP4',  text: 'MP4' },
-        { value: 'MP3',  text: 'MP3' }
-      ]
+        id: 'batchFormatSelect',
+        defaultValue: 'MP4',
+        options: [
+            // ── Video ──
+            { value: 'MP4',  text: '🎬 MP4  (Video)' },
+            { value: 'MKV',  text: '🎬 MKV  (Video)' },
+            { value: 'WEBM', text: '🎬 WEBM (Video)' },
+            // ── Audio ──
+            { value: 'MP3',  text: '🎵 MP3  (Audio)' },
+            { value: 'AAC',  text: '🎵 AAC  (Audio)' },
+            { value: 'M4A',  text: '🎵 M4A  (Audio)' },
+            { value: 'WAV',  text: '🎵 WAV  (Audio)' },
+            { value: 'FLAC', text: '🎵 FLAC (Audio)' },
+        ]
     },
     {
       id: 'batchQualitySelect',
@@ -1371,8 +1379,13 @@ function setupBatchTab() {
         });
     }
 
+    const AUDIO_FORMATS = ['MP3', 'AAC', 'WAV', 'FLAC', 'M4A'];
+
+    qualityRow.style.display = AUDIO_FORMATS.includes(formatSelect.value) ? 'none' : 'flex';
+
     formatSelect.addEventListener('change', (e) => {
-        qualityRow.style.display = (e.target.value === 'MP3') ? 'none' : 'flex';
+        const isAudio = AUDIO_FORMATS.includes(e.target.value);
+        qualityRow.style.display = isAudio ? 'none' : 'flex';
     });
     
     startBtn.addEventListener('click', async () => {
