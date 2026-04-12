@@ -170,6 +170,19 @@ function initApp() {
     waitForWails();
 }
 
+async function checkDependenciesOnStartup() {
+    if (!state.wailsReady) return;
+    try {
+        const result = await window.go.main.App.CheckDependencies();
+        console.log('[DEPS] Dependency check result:', result);
+        if (!result.allInstalled && result.missingTools && result.missingTools.length > 0) {
+            showDependencyWarning(result.missingTools);
+        }
+    } catch (err) {
+        console.error('[DEPS] Failed to check dependencies:', err);
+    }
+}
+
 function waitForWails() {
     wailsWaitAttempts++;
     
@@ -215,6 +228,8 @@ async function initializeApp() {
             state.availableBrowsers = await window.go.main.App.GetAvailableBrowsers();
             console.log('[BOOT] Cookie config loaded:', state.cookieConfig);
             console.log('[BOOT] Available browsers:', state.availableBrowsers);
+
+            checkDependenciesOnStartup();
         } catch (err) {
             console.error('[BOOT] Error loading initialization data:', err);
         }
@@ -2062,3 +2077,51 @@ function renderInfoTab() {
 document.getElementById('donateBtnKofi')?.addEventListener('click', () => {
   window.runtime.BrowserOpenURL('https://ko-fi.com/justinnguyenvn');
 });
+
+function showDependencyWarning(missingTools) {
+    // Tái dùng #update-banner đã có sẵn trong index.html
+    const banner = document.getElementById('update-banner');
+    if (!banner) return;
+
+    const toolsHTML = missingTools
+        .map(t => `<strong>${t}</strong>`)
+        .join(', ');
+
+    banner.innerHTML = `
+        <div class="update-items-list">
+            <div class="update-item">
+                <span class="update-msg">
+                    ⚠️ Thiếu công cụ bắt buộc: ${toolsHTML} — App sẽ không tải được!
+                </span>
+                <div class="update-actions">
+                    <button class="upgrade-btn" id="depInstallBtn">🛠 Cài đặt ngay</button>
+                </div>
+            </div>
+        </div>
+        <button class="banner-close-btn" id="depBannerDismiss" title="Dismiss">✕</button>
+    `;
+    banner.style.display = 'flex';
+    banner.classList.add('update-banner--multi');
+
+    document.getElementById('depBannerDismiss')?.addEventListener('click', () => {
+        banner.style.display = 'none';
+    });
+
+    document.getElementById('depInstallBtn')?.addEventListener('click', async () => {
+        const btn = document.getElementById('depInstallBtn');
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Đang cài...'; }
+        try {
+            await window.go.main.App.LaunchSetupTerminal();
+            const item = banner.querySelector('.update-item');
+            if (item) {
+                item.innerHTML = `<span class="update-msg update-msg--success">
+                    ✅ Terminal đang cài đặt... Vui lòng nhập mật khẩu Mac nếu được yêu cầu.
+                    Khởi động lại app sau khi Terminal hoàn thành.
+                </span>`;
+            }
+        } catch (err) {
+            if (btn) { btn.disabled = false; btn.textContent = '🛠 Cài đặt ngay'; }
+            console.error('[DEPS] Failed to launch setup terminal:', err);
+        }
+    });
+}

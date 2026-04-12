@@ -341,16 +341,6 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.loadConfig()
 	manager.LoadConfig()
-
-	// Check dependencies on startup
-	go func() {
-		time.Sleep(1 * time.Second)
-		check := a.CheckDependencies()
-		if !check.AllInstalled {
-			// Emit warning event to frontend with missing tools
-			runtime.EventsEmit(ctx, "dependencies-missing", check)
-		}
-	}()
 }
 
 // CheckBinaries checks if yt-dlp, ffmpeg and gallery-dl are installed (legacy support)

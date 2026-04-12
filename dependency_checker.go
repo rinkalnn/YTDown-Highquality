@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -81,24 +82,34 @@ func (a *App) InstallDependencies(tools []string) (bool, string) {
 
 // checkTool checks if a tool is installed and returns its version
 func checkTool(toolName string) DependencyStatus {
-	status := DependencyStatus{
-		Name: toolName,
-	}
+	status := DependencyStatus{Name: toolName}
 
-	// Check if tool exists in PATH
-	path, err := exec.LookPath(toolName)
-	if err != nil {
-		status.Installed = false
-		status.Error = "not found in PATH"
+	// Bước 1: Thử LookPath (hoạt động khi mở từ Terminal)
+	if path, err := exec.LookPath(toolName); err == nil {
+		status.Installed = true
+		status.Version = getToolVersion(toolName, path)
 		return status
 	}
 
-	status.Installed = true
+	// Bước 2: Fallback check các đường dẫn Homebrew thường gặp
+	// (khi mở từ Finder, $PATH không có /opt/homebrew/bin)
+	commonPaths := []string{
+		"/opt/homebrew/bin/" + toolName, // Apple Silicon (M1/M2/M3)
+		"/usr/local/bin/" + toolName,    // Intel Mac
+		"/usr/bin/" + toolName,
+	}
 
-	// Get version
-	version := getToolVersion(toolName, path)
-	status.Version = version
+	for _, p := range commonPaths {
+		if _, err := os.Stat(p); err == nil {
+			status.Installed = true
+			status.Version = getToolVersion(toolName, p)
+			return status
+		}
+	}
 
+	// Không tìm thấy ở đâu cả
+	status.Installed = false
+	status.Error = "not found in PATH or Homebrew directories"
 	return status
 }
 
