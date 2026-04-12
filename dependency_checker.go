@@ -180,7 +180,7 @@ func (a *App) PromptToInstallDependencies() (bool, string) {
 		Message: fmt.Sprintf("YTDown requires the following tools:\n\n%s\n\nWould you like to install them now via Homebrew?", strings.Join(check.MissingTools, "\n")),
 	})
 
-	if !confirmed {
+	if confirmed != "Yes" {
 		return false, "User declined to install dependencies"
 	}
 
